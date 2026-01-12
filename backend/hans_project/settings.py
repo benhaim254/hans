@@ -49,11 +49,10 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "django_filters",
     "corsheaders",
-    "hans_project",
-    "users",
-    "core",
-    "notifications",
-    "appointments",
+    "users.apps.UsersConfig",
+    "core.apps.CoreConfig",
+    "notifications.apps.NotificationsConfig",
+    "appointments.apps.AppointmentsConfig",
 ]
 
 MIDDLEWARE = [
@@ -96,7 +95,7 @@ DATABASES = {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": os.getenv("DB_NAME", "hans"),
         "USER": os.getenv("DB_USER", "hans"),
-        "PASSWORD": os.getenv("DB_PASSWORD", "hans_password"),
+        "PASSWORD": os.getenv("DB_PASSWORD", "12345678"),
         "HOST": os.getenv("DB_HOST", "localhost"),
         "PORT": os.getenv("DB_PORT", "5432"),
     }

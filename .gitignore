@@ -1,27 +1,43 @@
-# Virtualenv
-.venv/
-
-
 # Python
-*.pyc
 __pycache__/
-
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
 
 # Django
-*.sqlite3
-/media/
+*.log
+db.sqlite3
+db.sqlite3-journal
 /staticfiles/
-
+/mediafiles/
 
 # Environment
 .env
+.env.local
+*.env
 
-
-# Editor
+# IDE
 .vscode/
 .idea/
-
+*.swp
+*.swo
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
+.vscode/
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Windows
+*.bak
+*.tmp
