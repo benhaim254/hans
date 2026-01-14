@@ -184,3 +184,17 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
+
+OAUTH2_PROVIDER = {
+    "SCOPES": {
+        "read": "Read scope",
+        "write": "Write scope",
+        "patient": "Access patient data",
+        "doctor": "Access doctor data",
+        "appointments": "Manage appointments",
+    },
+    "ACCESS_TOKEN_EXPIRE_SECONDS": 36000,  # 10 hours
+    "REFRESH_TOKEN_EXPIRE_SECONDS": 86400,  # 1 day
+    "AUTHORIZATION_CODE_EXPIRE_SECONDS": 600,  # 10 minutes
+    "OAUTH2_BACKEND_CLASS": "oauth2_provider.oauth2_backends.JSONOAuthLibCore",
+}
