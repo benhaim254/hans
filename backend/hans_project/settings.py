@@ -13,10 +13,6 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -45,14 +41,13 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "rest_framework.authtoken",
     "oauth2_provider",
-    "drf_spectacular",
-    "django_filters",
     "corsheaders",
-    "users.apps.UsersConfig",
-    "core.apps.CoreConfig",
-    "notifications.apps.NotificationsConfig",
-    "appointments.apps.AppointmentsConfig",
+    "users",
+    "core",
+    "notifications",
+    "appointments",
 ]
 
 MIDDLEWARE = [
@@ -121,9 +116,6 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 
-# Internationalization
-# https://docs.djangoproject.com/en/6.0/topics/i18n/
-
 LANGUAGE_CODE = "en-us"
 
 TIME_ZONE = "UTC"
@@ -133,11 +125,7 @@ USE_I18N = True
 USE_TZ = True
 
 
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/6.0/howto/static-files/
-
 STATIC_URL = "static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"
 
 
 # Default primary key field type
@@ -148,19 +136,9 @@ AUTH_USER_MODEL = "users.User"
 
 # REST Framework configuration
 REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": (
-        "oauth2_provider.contrib.rest_framework.OAuth2Authentication",
+    "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.SessionAuthentication",
-    ),
-    "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
-    "PAGE_SIZE": 20,
-    "DEFAULT_FILTER_BACKENDS": (
-        "django_filters.rest_framework.DjangoFilterBackend",
-        "rest_framework.filters.SearchFilter",
-        "rest_framework.filters.OrderingFilter",
-    ),
-    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    ],
 }
 
 # API Documentation
@@ -193,6 +171,10 @@ OAUTH2_PROVIDER = {
         "doctor": "Access doctor data",
         "appointments": "Manage appointments",
     },
+    "ALLOWED_GRANT_TYPES": [
+        "password",
+        "refresh_token",
+    ],
     "ACCESS_TOKEN_EXPIRE_SECONDS": 36000,  # 10 hours
     "REFRESH_TOKEN_EXPIRE_SECONDS": 86400,  # 1 day
     "AUTHORIZATION_CODE_EXPIRE_SECONDS": 600,  # 10 minutes
