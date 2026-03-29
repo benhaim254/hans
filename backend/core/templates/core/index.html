@@ -8,5 +8,9 @@
 </head>
 <body>
     <h1>Welcome to the HANS! </h1>
+    <ul>
+        {% for user in users %}
+            <li>{{ user.First_name }} {{ user.Last_name }} - {{ user.email }}</li>
+        {% endfor %}
 </body>
 </html>
