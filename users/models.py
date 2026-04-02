@@ -5,8 +5,13 @@ class User(AbstractUser):
     """
     HANS Custom User Model.
     Extends AbstractUser to allow for role-based access control (RBAC).
+
+    Roles:
+    Patient: Can book appointments.
+    Doctor: View assigned appointments and set availability.
+    Admin: System maintenance and staff management
     """
-    # Use Constants for roles to avoid "magic strings" in views later
+    # Assign labels to avoid confusion in views later
     ROLE_PATIENT = 'patient'
     ROLE_DOCTOR = 'doctor'
     ROLE_ADMIN = 'admin'
@@ -28,6 +33,7 @@ class User(AbstractUser):
 class CommonProfile(models.Model):
     """
     Contains fields shared by all profile types.
+    Doesn't have a dedicated database table
     """
     GENDER_MALE = 'male'
     GENDER_FEMALE = 'female'
@@ -40,12 +46,14 @@ class CommonProfile(models.Model):
     ]
 
     user = models.OneToOneField('User',on_delete=models.CASCADE)
-# Add a role field to allow the user to distinguish their gender. 
-# Other is the default for thoes who prefer not to say.
+# Adds a field to allow the user to distinguish their gender. 
+# Other is the default for any who prefer not to say.
     gender = models.CharField(max_length=10,
                           choices=GENDER_CHOICES,
                           blank=True,
                           default=GENDER_OTHER)
+# Date of birth is information that might be vital in some diagnosis. 
+    date_of_birth = models.DateField(blank=True, null=True)
 # Needed for communication and Notifications. 
 # Setup for future SMS/Email integration.
     phone = models.CharField(max_length=20,
@@ -61,6 +69,37 @@ class PatientProfile(CommonProfile):
     """
     Contains information about the patient.
     """
+
+    BLOOD_A_POS = 'A+'
+    BLOOD_A_NEG = 'A-'
+    BLOOD_B_POS = 'B+'
+    BLOOD_B_NEG = 'B-'
+    BLOOD_AB_POS = 'AB+'
+    BLOOD_AB_NEG = 'AB-'
+    BLOOD_O_POS = 'O+'
+    BLOOD_O_NEG = 'O-'
+
+    BLOOD_GROUP_CHOICES = [
+        (BLOOD_A_POS, 'A+'),
+        (BLOOD_A_NEG, 'A-'),
+        (BLOOD_B_POS, 'B+'),
+        (BLOOD_B_NEG, 'B-'),
+        (BLOOD_AB_POS, 'AB+'),
+        (BLOOD_AB_NEG, 'AB-'),
+        (BLOOD_O_POS, 'O+'),
+        (BLOOD_O_NEG, 'O-'),
+    ]
+
+    blood_group = models.CharField(max_length=3,
+                                   choices=BLOOD_GROUP_CHOICES,
+                                   blank=True)
+    allergies = models.TextField(blank=True,
+                                 help_text="Please list any known allergies.")
+    emergency_contact_name = models.CharField(max_length=100, blank=True)
+    emergency_contact_phone = models.CharField(max_length=20,
+                                               blank=True,
+                                               help_text="Use international format: +254")
+
     class Meta:
         verbose_name = 'Patient Profile'
     
@@ -90,6 +129,9 @@ class DoctorProfile(CommonProfile):
 
     department = models.CharField(max_length=20,choices=DEPARTMENT_CHOICES,
                                   default=DEPT_GENERAL)
+    specialization = models.CharField(max_length=100, blank=True)
+    license_number = models.CharField(max_length=50, blank=True, help_text="KMPDC license number")
+    available_days= models.CharField(max_length=100, blank=True, help_text="e.g Mon, Wed, Fri")
     
     class Meta:
         verbose_name = 'Doctor Profile'
