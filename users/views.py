@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from django.contrib.auth import get_user_model
+from .permissions import IsPatient, IsDoctor
 
 User = get_user_model()
 
@@ -40,6 +41,18 @@ class RegisterView(APIView):
             {'message': f'User {username} create with role {role}'},
             status=status.HTTP_201_CREATED
             )
+class PatientOnlyView(APIView):
+    permission_classes = [IsPatient]
+
+    def get(self,request):
+        return Response({'message': f'Hello {request.user.username}'})
+    
+class DoctorOnlyView(APIView):
+    permission_classes = [IsDoctor]
+
+    def get(self, request):
+        return Response ({'message': f'Hello Dr.{request.user.username}'})
+
 def index(request):
     """
     View to display all users in the system.
