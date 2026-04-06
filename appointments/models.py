@@ -1,7 +1,7 @@
 from django.db import models
 from django.conf import settings
 
-# Create your models here.
+
 class Appointment(models.Model):
     STATUS_CHOICES = [
         ('pending', 'Pending'),
@@ -27,12 +27,11 @@ class Appointment(models.Model):
         max_length=20, 
         choices=STATUS_CHOICES, 
         default='pending')
+    
     cancellation_reason=models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
     def __str__(self):
-        return f"Appointment: {self.patient} with Dr.{self.doctor} on {self.appointment_date} at {self.appointment_time}"
-    
-
+        return (f"Appointment: {self.patient} with Dr.{self.doctor} on {self.appointment_date} at {self.appointment_time}")
     
