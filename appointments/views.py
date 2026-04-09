@@ -1,7 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from .models import Appointment
-from users.models import User
+from .forms import AppointmentForm
 from users.views import redirect_by_role
 
 @login_required
@@ -9,8 +9,20 @@ def patient_dashboard(request):
     appointments = Appointment.objects.filter(
         patient=request.user
     ).order_by('-appointment_date')
+
+    if request.method == 'POST':
+        form = AppointmentForm(request.POST)
+        if form.is_valid():
+            appointment = form.save(commit=False)
+            appointment.patient = request.user
+            appointment.save()
+            return redirect('patient_dashboard')
+    else:
+        form = AppointmentForm()
+
     return render(request, 'appointments/patient_dashboard.html', {
         'appointments': appointments,
+        'form': form
     })
 
 @login_required
