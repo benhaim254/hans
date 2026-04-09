@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<h2 style="margin-bottom: 20px;">My Appointments</h2>
+
+{% if appointments %}
+    {% for appointment in appointments %}
+        <div class="card">
+            <p><strong>Doctor:</strong> {{ appointment.doctor.username }}</p>
+            <p><strong>Date:</strong> {{ appointment.appointment_date }}</p>
+            <p><strong>Time:</strong> {{ appointment.appointment_time }}</p>
+            <p><strong>Reason:</strong> {{ appointment.reason }}</p>
+            <p><strong>Status:</strong> 
+                <span class="badge badge-{{ appointment.status }}">{{ appointment.status }}</span>
+            </p>
+        </div>
+    {% endfor %}
+{% else %}
+    <div class="card">
+        <p>You have no appointments yet.</p>
+    </div>
+{% endif %}
+{% endblock %}
