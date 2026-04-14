@@ -1,14 +1,19 @@
 from django.db import models
 from django.conf import settings
+from uuid import uuid4
 
 
+STATUS_TYPES = [
+    ('pending', 'Pending'),
+    ('scheduled', 'Scheduled'),
+    ('completed', 'Completed'),
+    ('canceled', 'Canceled'),
+]
+    
+    
 class Appointment(models.Model):
-    STATUS_CHOICES = [
-        ('pending', 'Pending'),
-        ('scheduled', 'Scheduled'),
-        ('completed', 'Completed'),
-        ('canceled', 'Canceled'),
-    ]
+
+    appointment_id = models.UUIDField(default=uuid4, unique=True)
     
     patient = models.ForeignKey(
         settings.AUTH_USER_MODEL, 
@@ -25,12 +30,12 @@ class Appointment(models.Model):
     reason=models.CharField(max_length=255,blank=True)
     status = models.CharField(
         max_length=20, 
-        choices=STATUS_CHOICES, 
+        choices=STATUS_TYPES, 
         default='pending')
     
     cancellation_reason=models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    last_updated = models.DateTimeField(auto_now=True)
     
     def __str__(self):
         return (f"Appointment: {self.patient} with Dr.{self.doctor} on {self.appointment_date} at {self.appointment_time}")

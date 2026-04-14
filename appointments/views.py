@@ -1,7 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from .models import Appointment
-from .forms import AppointmentForm
+#from .forms import AppointmentForm
 from users.views import redirect_by_role
 
 @login_required

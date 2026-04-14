@@ -9,14 +9,14 @@ class UserAdmin(admin.ModelAdmin):
 
 @admin.register(PatientProfile)
 class PatientProfileAdmin(admin.ModelAdmin):
-    list_display = ['user', 'gender', 'phone', 
+    list_display = ['user', 'gender', 'phone_number', 
                     'date_of_birth', 'blood_group']
     list_filter = ['gender','blood_group']
     search_fields = ['user__username']
 
 @admin.register(DoctorProfile)
 class DoctorProfileAdmin(admin.ModelAdmin):
-    list_display = ['user','gender', 'phone', 
+    list_display = ['user','gender', 'phone_number', 
                     'date_of_birth', 'department', 
                     'specialization', 'license_number']       
     list_filter = ['gender', 'department']
