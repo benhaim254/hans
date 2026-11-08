@@ -1,117 +1,124 @@
 # HANS
 
-HANS (Hospital Appointment and Notification System) is a web application that allows patients to schedule appointments with doctors and receive notifications when their appointment time draws near.
+[![CI](https://github.com/benhaim254/hans/actions/workflows/ci.yml/badge.svg)](https://github.com/benhaim254/hans/actions/workflows/ci.yml)
 
-## Table of Contents
+HANS (Health Appointment and Notification System) is a Django app for booking clinic appointments. Patients request a slot with a doctor, the doctor confirms it, and both sides get a notification when anything changes. The same rules are available two ways: a server-rendered web app with session login, and a REST API with JWT auth.
 
-1. [Introduction](#introduction)
-2. [Features](#features)
-3. [Tech Stack](#tech-stack)
-4. [Project Structure](#project-structure)
-5. [Setup](#setup)
-   * [Prerequisites](#prerequisites)
-   * [Installation](#installation)
-   * [Environment Variables](#environment-variables)
-   * [Running the App](#running-the-app)
-6. [Status](#status)
-7. [Author](#author)
+I built it as a learning project and portfolio piece, one module at a time.
 
-## Introduction
+## What it does
 
-HANS is a Django-based hospital management web application built to streamline the appointment process between patients and doctors. It supports three user roles — patients, doctors, and admins — each with a dedicated set of capabilities.
+Patients can:
+- register, log in and fill in a profile (blood group, allergies, emergency contact)
+- book an appointment with a doctor for a future date and time
+- cancel a pending or confirmed appointment, giving a reason
+- see notifications about their bookings
 
-This project is being developed as both a learning exercise and a portfolio piece, with a structured, module-by-module approach.
+Doctors can:
+- register, log in and fill in a profile (department, specialization, license number)
+- see the appointments booked with them and confirm pending ones
+- get notified when a patient books or cancels
 
-## Features
+Admins manage users, profiles, appointments and notifications in the Django admin. Running `createsuperuser` gives the account the admin role.
 
-### Patient
-- Request appointments with doctors
-- View current and previous appointment sessions
+## Design notes
 
-### Doctor
-- Accept, refer, or reschedule appointments
-- View their appointment schedule
-- Write short notes after sessions
+- Roles live on a custom `User` model (`patient`, `doctor`, `admin`). Web views use a `role_required` decorator and API views use DRF permission classes (`IsPatient`, `IsDoctor`). Each user only ever sees their own appointments; asking for someone else's returns 404.
+- Self-registration can create patients and doctors, never admins. Doctor accounts are not verified against a license register, which a real deployment would need.
+- A doctor cannot be double-booked. A partial unique constraint on `(doctor, date, time)` enforces it in the database and ignores canceled appointments, so canceling frees the slot. `Appointment.clean()` runs the same check first so the form and the API return a readable error.
+- Status changes go through `Appointment.confirm()` and `Appointment.cancel()`, so the web views and the API share one set of transition rules.
+- The `notifications` app listens to appointment saves. It stores a `Notification` row and emails the user once the transaction commits. In development, emails print to the terminal.
+- Profiles (`PatientProfile`, `DoctorProfile`) are created automatically by a `post_save` signal when a user signs up.
 
-### Admin
-- Manage system users and staff
-- Handle overall system maintenance
+## Tech stack
 
-## Tech Stack
+- Python 3.12, Django 6.0, Django REST Framework, Simple JWT
+- SQLite for development
+- uv for dependencies, python-decouple for settings
+- GitHub Actions running system checks, a migrations check and the test suite
 
-* Python 3.12.3
-* Django 6.0.3
-* SQLite (development) — PostgreSQL (planned for production)
-* Django Templates (migrating to HTMX)
-* pipenv
-* python-decouple
+## Getting started
 
-## Project Structure
-
-```
-hans/
-├── users/                  # User management and profiles
-│   └── templates/
-├── appointments/           # Appointment scheduling and management
-│   └── templates/
-├── notifications/          # Appointment notifications
-├── .env                    # Environment variables (not committed)
-├── Pipfile
-└── Pipfile.lock
-```
-
-## Setup
-
-### Prerequisites
-
-* Python 3.12.3
-* pipenv
-
-### Installation
+You need Python 3.12 and [uv](https://docs.astral.sh/uv/).
 
 ```
 git clone https://github.com/benhaim254/hans.git
 cd hans
-pipenv install
-pipenv shell
+uv sync
+cp .env.example .env    # then set SECRET_KEY to a long random string
+uv run python manage.py migrate
+uv run python manage.py seed_demo --with-admin
+uv run python manage.py runserver
 ```
 
-### Environment Variables
+Open http://127.0.0.1:8000/. The seed command creates these accounts, all with the password `hans-demo-2026`:
 
-Create a `.env` file in the root directory and set the following:
+| Username | Role |
+|---|---|
+| `jane`, `peter` | patient |
+| `dr_amina`, `dr_otieno` | doctor |
+| `admin` | admin (only with `--with-admin`) |
+
+The Django admin is at http://127.0.0.1:8000/admin/.
+
+To generate a secret key:
 
 ```
-SECRET_KEY=your-secret-key-here
-DEBUG=True
-ALLOWED_HOSTS=localhost,127.0.0.1
+uv run python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
 ```
 
-### Running the App
+## REST API
+
+| Method | Path | Who | What |
+|---|---|---|---|
+| POST | `/api/register/` | anyone | create a patient or doctor account |
+| POST | `/api/token/` | anyone | get access and refresh tokens (the access token carries the user's role) |
+| POST | `/api/token/refresh/` | anyone | refresh an access token |
+| GET | `/api/appointments/` | patient, doctor | list your own appointments |
+| POST | `/api/appointments/` | patient | book an appointment |
+| GET | `/api/appointments/<uuid>/` | patient, doctor | one of your appointments |
+| POST | `/api/appointments/<uuid>/confirm/` | doctor | confirm a pending appointment |
+| POST | `/api/appointments/<uuid>/cancel/` | patient | cancel, with `cancellation_reason` |
+
+Example:
 
 ```
-python manage.py migrate
-python manage.py createsuperuser
-python manage.py runserver
+TOKEN=$(curl -s -X POST localhost:8000/api/token/ -d username=jane -d password=hans-demo-2026 \
+  | python -c "import sys, json; print(json.load(sys.stdin)['access'])")
+curl -H "Authorization: Bearer $TOKEN" localhost:8000/api/appointments/
 ```
 
-Once running, navigate to `http://127.0.0.1:8000/` in your browser.  
-The admin portal is available at `http://127.0.0.1:8000/admin/`.
+## Running the tests
 
-## Status
+```
+uv run python manage.py test
+```
 
-HANS is currently under active development.
+## Branches
 
-**Working:**
-- User creation (patients, doctors, admins) via Django admin
-- Patient and doctor profile setup via Django admin
+- `main` holds finished, working releases. It only changes by merging `dev`.
+- `dev` is where work comes together. Feature branches start from `dev` and merge back into it through a pull request.
 
-**In Progress:**
-- Appointment scheduling and management
-- Notification system
-- Frontend — home page, patient portal, patient signup, doctor portal
+CI runs on every push to `main` and `dev` and on every pull request into them.
+
+## Project layout
+
+```
+hans/            settings and root URLs (web routes plus the /api/ router)
+users/           custom User, profiles, registration, login, role checks
+appointments/    Appointment model, web views, API viewset, seed_demo command
+notifications/   Notification model and the signals that create them
+templates/       server-rendered pages
+```
+
+## What's next
+
+- Structured doctor availability, so patients can only pick open slots
+- Reminder notifications the day before an appointment, and SMS
+- Production settings: Postgres, static files with WhiteNoise, a Dockerfile
 
 ## Author
 
-**Benjamin Owuor Ouma**
+Benjamin Owuor Ouma
 - GitHub: [@benhaim254](https://github.com/benhaim254)
 - LinkedIn: [benjamin-owuor-bb4838261](https://linkedin.com/in/benjamin-owuor-bb4838261)

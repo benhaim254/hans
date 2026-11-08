@@ -1,12 +1,20 @@
 from django import forms
+
+from users.models import ROLE_DOCTOR, User
+
 from .models import Appointment
-from users.models import User
+
 
 class AppointmentForm(forms.ModelForm):
     doctor = forms.ModelChoiceField(
-        queryset=User.objects.filter(role=User.ROLE_DOCTOR),
+        queryset=User.objects.filter(role=ROLE_DOCTOR),
         empty_label="Select a Doctor"
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['doctor'].label_from_instance = (
+            lambda doctor: f"Dr. {doctor.get_full_name() or doctor.username}")
 
     class Meta:
         model = Appointment
@@ -15,3 +23,11 @@ class AppointmentForm(forms.ModelForm):
             'appointment_date': forms.DateInput(attrs={'type': 'date'}),
             'appointment_time': forms.TimeInput(attrs={'type': 'time'}),
         }
+
+
+class CancelAppointmentForm(forms.Form):
+    cancellation_reason = forms.CharField(
+        label='Reason for canceling',
+        max_length=500,
+        widget=forms.TextInput(attrs={'placeholder': 'Reason for canceling'}),
+    )

@@ -1,52 +1,70 @@
-from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from django.core.exceptions import ValidationError
+from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
+
+from users.decorators import role_required
+from users.models import ROLE_DOCTOR, ROLE_PATIENT
+
+from .forms import AppointmentForm, CancelAppointmentForm
 from .models import Appointment
-from .forms import AppointmentForm
-from users.views import redirect_by_role
 
-@login_required
+
+@role_required(ROLE_PATIENT)
 def patient_dashboard(request):
-    appointments = Appointment.objects.filter(
-        patient=request.user
-    ).order_by('-appointment_date')
-
     if request.method == 'POST':
         form = AppointmentForm(request.POST)
+        form.instance.patient = request.user
         if form.is_valid():
-            appointment = form.save(commit=False)
-            appointment.patient = request.user
-            appointment.save()
+            form.save()
+            messages.success(request, 'Appointment requested. The doctor will confirm it shortly.')
             return redirect('patient_dashboard')
     else:
         form = AppointmentForm()
 
+    appointments = (Appointment.objects
+                    .filter(patient=request.user)
+                    .select_related('doctor'))
     return render(request, 'appointments/patient_dashboard.html', {
         'appointments': appointments,
-        'form': form
+        'form': form,
+        'cancel_form': CancelAppointmentForm(auto_id=False),
     })
 
-@login_required
+
+@role_required(ROLE_DOCTOR)
 def doctor_dashboard(request):
-    appointments = Appointment.objects.filter(
-        doctor=request.user
-    ).order_by('-appointment_date')
+    appointments = (Appointment.objects
+                    .filter(doctor=request.user)
+                    .select_related('patient'))
     return render(request, 'appointments/doctor_dashboard.html', {
         'appointments': appointments,
     })
 
-@login_required
+
+@require_POST
+@role_required(ROLE_DOCTOR)
 def confirm_appointment(request, appointment_id):
-    appointment = get_object_or_404(
-        Appointment,
-        id=appointment_id,
-        doctor=request.user
-    )
-    if request.method == 'POST':
-        appointment.status = 'scheduled'
-        appointment.save()
+    appointment = get_object_or_404(Appointment, appointment_id=appointment_id, doctor=request.user)
+    try:
+        appointment.confirm()
+        messages.success(request, 'Appointment confirmed.')
+    except ValidationError as error:
+        messages.error(request, error.messages[0])
     return redirect('doctor_dashboard')
 
-def index(request):
-    appointments = Appointment.objects.all()
-    context = {'appointments': appointments}
-    return render(request, 'appointments/index.html', context)
+
+@require_POST
+@role_required(ROLE_PATIENT)
+def cancel_appointment(request, appointment_id):
+    appointment = get_object_or_404(Appointment, appointment_id=appointment_id, patient=request.user)
+    form = CancelAppointmentForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, 'Please give a reason for canceling.')
+        return redirect('patient_dashboard')
+    try:
+        appointment.cancel(form.cleaned_data['cancellation_reason'])
+        messages.success(request, 'Appointment canceled.')
+    except ValidationError as error:
+        messages.error(request, error.messages[0])
+    return redirect('patient_dashboard')

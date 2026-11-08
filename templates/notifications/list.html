@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<h2 style="margin-bottom: 20px;">Notifications</h2>
+{% for notification in notifications %}
+    <div class="card">
+        <p>{% if not notification.is_read %}<span class="badge badge-pending">New</span> {% endif %}{{ notification.message }}</p>
+        <p class="helptext">{{ notification.created_at|timesince }} ago</p>
+    </div>
+{% empty %}
+    <div class="card"><p>No notifications yet.</p></div>
+{% endfor %}
+{% endblock %}

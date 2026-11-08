@@ -1,0 +1,13 @@
+[project]
+name = "hans"
+version = "0.1.0"
+description = "Health Appointment & Notification System: patient booking, doctor confirmation and notifications, with a Django web app and a JWT REST API."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "django~=6.0.3",
+    "djangorestframework==3.17.1",
+    "djangorestframework-simplejwt==5.5.1",
+    "django-phonenumber-field[phonenumbers]>=8.0,<9",
+    "python-decouple==3.8",
+]
