@@ -33,6 +33,7 @@ Admins manage users, profiles, appointments and notifications in the Django admi
 ## Tech stack
 
 - Python 3.12, Django 6.0, Django REST Framework, Simple JWT
+- Bootstrap 5 for the web pages, Django Unfold for the admin site
 - SQLite for development
 - uv for dependencies, python-decouple for settings
 - GitHub Actions running system checks, a migrations check and the test suite

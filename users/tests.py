@@ -92,3 +92,24 @@ class WebAuthTests(TestCase):
         self.assertRedirects(response, reverse('patient_dashboard'))
         user.patientprofile.refresh_from_db()
         self.assertEqual(user.patientprofile.blood_group, 'O+')
+
+
+class AdminTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_superuser('root', 'root@example.com', STRONG_PASSWORD)
+        self.client.force_login(self.admin)
+
+    def test_admin_pages_render(self):
+        for name in ['admin:index', 'admin:users_user_changelist', 'admin:users_user_add',
+                     'admin:appointments_appointment_changelist', 'admin:notifications_notification_changelist']:
+            self.assertEqual(self.client.get(reverse(name)).status_code, 200, name)
+
+    def test_admin_add_user_hashes_password_and_sets_role(self):
+        response = self.client.post(reverse('admin:users_user_add'), {
+            'username': 'newdoc', 'usable_password': 'true',
+            'password1': STRONG_PASSWORD, 'password2': STRONG_PASSWORD, 'role': ROLE_DOCTOR,
+        })
+        self.assertEqual(response.status_code, 302, getattr(response, 'context', None) and response.context['adminform'].form.errors)
+        user = User.objects.get(username='newdoc')
+        self.assertTrue(user.check_password(STRONG_PASSWORD))
+        self.assertEqual(user.role, ROLE_DOCTOR)

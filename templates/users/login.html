@@ -1,24 +1,33 @@
 {% extends "base.html" %}
+{% block title %}Log in{% endblock %}
 {% block content %}
-<div style="max-width: 400px; margin: 50px auto;">
-    <div class="card">
-        <h2 style="margin-bottom: 20px;">Login to HANS</h2>
-        {% if error %}
-            <div class="alert alert-error">{{ error }}</div>
-        {% endif %}
-        <form method="POST">
-            {% csrf_token %}
-            <div style="margin-bottom: 15px;">
-                <label>Username</label><br>
-                <input type="text" name="username" style="width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ddd; border-radius: 4px;">
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-4">
+        <div class="text-center mb-4">
+            <i class="bi bi-hospital text-primary display-5" aria-hidden="true"></i>
+            <h1 class="h3 mt-2">Welcome to HANS</h1>
+            <p class="text-secondary">Book and manage clinic appointments.</p>
+        </div>
+        <div class="card">
+            <div class="card-body p-4">
+                {% if error %}
+                    <div class="alert alert-danger" role="alert">{{ error }}</div>
+                {% endif %}
+                <form method="POST">
+                    {% csrf_token %}
+                    <div>
+                        <label for="id_username">Username</label>
+                        <input type="text" name="username" id="id_username" class="form-control" autocomplete="username" required autofocus>
+                    </div>
+                    <div>
+                        <label for="id_password">Password</label>
+                        <input type="password" name="password" id="id_password" class="form-control" autocomplete="current-password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Log in</button>
+                </form>
             </div>
-            <div style="margin-bottom: 15px;">
-                <label>Password</label><br>
-                <input type="password" name="password" style="width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ddd; border-radius: 4px;">
-            </div>
-            <button type="submit" class="btn btn-primary" style="width: 100%;">Login</button>
-        </form>
-        <p style="margin-top: 15px;">New here? <a href="{% url 'users:register' %}">Create an account</a></p>
+        </div>
+        <p class="text-center mt-3 text-secondary">New here? <a href="{% url 'users:register' %}">Create an account</a></p>
     </div>
 </div>
 {% endblock %}

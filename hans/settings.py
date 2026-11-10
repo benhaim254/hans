@@ -34,6 +34,7 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=Csv(
 # Application definition
 
 INSTALLED_APPS = [
+    'unfold',  # admin theme; must load before django.contrib.admin
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -145,6 +146,12 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 LOGIN_URL = 'users:login'
+
+UNFOLD = {
+    'SITE_TITLE': 'HANS admin',
+    'SITE_HEADER': 'HANS',
+    'SITE_SYMBOL': 'local_hospital',
+}
 
 # Console backend prints emails to the terminal in development.
 EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend')

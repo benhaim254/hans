@@ -1,31 +1,52 @@
 {% extends "base.html" %}
+{% block title %}My patients{% endblock %}
 {% block content %}
-<h2 style="margin-bottom: 20px;">My Patients</h2>
-
-{% if appointments %}
-    {% for appointment in appointments %}
-        <div class="card">
-            <p><strong>Patient:</strong> {{ appointment.patient.get_full_name|default:appointment.patient.username }}</p>
-            <p><strong>Date:</strong> {{ appointment.appointment_date }}</p>
-            <p><strong>Time:</strong> {{ appointment.appointment_time }}</p>
-            <p><strong>Reason:</strong> {{ appointment.reason }}</p>
-            <p><strong>Status:</strong>
-                <span class="badge badge-{{ appointment.status }}">{{ appointment.get_status_display }}</span>
-            </p>
-            {% if appointment.cancellation_reason %}
-                <p><strong>Cancellation reason:</strong> {{ appointment.cancellation_reason }}</p>
-            {% endif %}
-            {% if appointment.status == 'pending' %}
-                <form method="POST" action="{% url 'confirm_appointment' appointment.appointment_id %}">
-                    {% csrf_token %}
-                    <button type="submit" class="btn btn-success" style="margin-top: 10px;">Confirm</button>
-                </form>
-            {% endif %}
+<h1 class="h3 mb-4">My patients</h1>
+<div class="card">
+    {% if appointments %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col">Patient</th>
+                        <th scope="col">Date</th>
+                        <th scope="col">Time</th>
+                        <th scope="col">Reason</th>
+                        <th scope="col">Status</th>
+                        <th scope="col"><span class="visually-hidden">Actions</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for appointment in appointments %}
+                    <tr>
+                        <td class="fw-medium">{{ appointment.patient.get_full_name|default:appointment.patient.username }}</td>
+                        <td>{{ appointment.appointment_date|date:"D j M Y" }}</td>
+                        <td>{{ appointment.appointment_time|time:"H:i" }}</td>
+                        <td>
+                            {% if appointment.reason %}{{ appointment.reason }}{% else %}<span class="text-secondary">None given</span>{% endif %}
+                            {% if appointment.cancellation_reason %}
+                                <div class="small text-danger">Canceled: {{ appointment.cancellation_reason }}</div>
+                            {% endif %}
+                        </td>
+                        <td><span class="badge rounded-pill status-{{ appointment.status }}">{{ appointment.get_status_display }}</span></td>
+                        <td class="text-end">
+                            {% if appointment.status == 'pending' %}
+                                <form method="POST" action="{% url 'confirm_appointment' appointment.appointment_id %}" class="m-0">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-check2 me-1" aria-hidden="true"></i>Confirm</button>
+                                </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
         </div>
-    {% endfor %}
-{% else %}
-    <div class="card">
-        <p>You have no assigned appointments.</p>
-    </div>
-{% endif %}
+    {% else %}
+        <div class="card-body text-center text-secondary py-5">
+            <i class="bi bi-inbox display-6 d-block mb-2" aria-hidden="true"></i>
+            You have no assigned appointments.
+        </div>
+    {% endif %}
+</div>
 {% endblock %}

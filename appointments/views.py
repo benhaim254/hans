@@ -28,7 +28,6 @@ def patient_dashboard(request):
     return render(request, 'appointments/patient_dashboard.html', {
         'appointments': appointments,
         'form': form,
-        'cancel_form': CancelAppointmentForm(auto_id=False),
     })
 
 
