@@ -1,13 +1,19 @@
 {% extends "base.html" %}
+{% block title %}My profile{% endblock %}
 {% block content %}
-<div style="max-width: 600px; margin: 30px auto;">
-    <div class="card">
-        <h2 style="margin-bottom: 20px;">My Profile</h2>
-        <form method="POST">
-            {% csrf_token %}
-            {{ form.as_div }}
-            <button type="submit" class="btn btn-primary">Save profile</button>
-        </form>
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="card">
+            <div class="card-body p-4">
+                <h1 class="h4 mb-1">My profile</h1>
+                <p class="text-secondary mb-4">This helps your {% if request.user.role == 'doctor' %}patients find you{% else %}doctor prepare for your visit{% endif %}.</p>
+                <form method="POST">
+                    {% csrf_token %}
+                    {{ form.as_div }}
+                    <button type="submit" class="btn btn-primary">Save profile</button>
+                </form>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
