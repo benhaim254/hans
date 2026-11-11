@@ -13,6 +13,7 @@ class Notification(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [models.Index(fields=['user', 'is_read'], name='notification_user_unread')]
 
     def __str__(self):
         return f"To {self.user.username}: {self.message}"

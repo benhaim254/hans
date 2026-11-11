@@ -83,6 +83,14 @@ class User(AbstractUser):
 
     objects = UserManager()
 
+    def save(self, *args, **kwargs):
+        # The admin role means managing the system through the admin site, which needs staff access.
+        if self.role == ROLE_ADMIN and not self.is_staff:
+            self.is_staff = True
+            if kwargs.get('update_fields') is not None:
+                kwargs['update_fields'] = {*kwargs['update_fields'], 'is_staff'}
+        super().save(*args, **kwargs)
+
 #Return username and role for easy identification in admin and debugging.
     def __str__(self):
         return f"{self.username} ({self.role})"
@@ -166,6 +174,10 @@ class KmpdcRegister(models.Model):
 
     def __str__(self):
         return f"{self.license_number} ({self.full_name})"
+
+    def clean(self):
+        # Normalise before unique validation, so ' a1 ' is caught as a duplicate of 'A1' in the admin form.
+        self.license_number = normalize_kmpdc(self.license_number)
 
     def save(self, *args, **kwargs):
         self.license_number = normalize_kmpdc(self.license_number)

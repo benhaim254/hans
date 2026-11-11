@@ -2,6 +2,7 @@ from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.http import Http404
+from django.db import IntegrityError
 from django.shortcuts import redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
@@ -77,7 +78,11 @@ def register_view(request):
         return redirect_by_role(request.user)
     form = SignUpForm(request.POST or None)
     if form.is_valid():
-        user = form.save()
+        try:
+            user = form.save()
+        except IntegrityError:  # same username or KMPDC number claimed by a simultaneous sign-up
+            form.add_error(None, 'Someone registered with these details at the same moment. Please try again.')
+            return render(request, 'users/register.html', {'form': form})
         login(request, user)
         messages.success(request, 'Welcome to HANS. Complete your profile below.')
         return redirect('users:profile_edit')
