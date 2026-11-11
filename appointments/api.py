@@ -47,7 +47,7 @@ class AppointmentViewSet(mixins.ListModelMixin,
         try:
             with transaction.atomic():
                 serializer.save(patient=self.request.user)
-        except IntegrityError:  # someone took the same slot between validation and the insert
+        except (DjangoValidationError, IntegrityError):  # someone took the slot after validation ran
             raise serializers.ValidationError({'detail': DOUBLE_BOOKED_MESSAGE})
 
     def _transition(self, change):
