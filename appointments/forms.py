@@ -131,3 +131,11 @@ class NewTimeForm(BootstrapFormMixin, forms.Form):
                 self.add_error(None, error)
             return False
         return True
+
+
+class VisitNotesForm(forms.ModelForm):
+    class Meta:
+        model = Appointment
+        fields = ['visit_notes']
+        labels = {'visit_notes': 'Visit notes'}
+        widgets = {'visit_notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 10})}

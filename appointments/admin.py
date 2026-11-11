@@ -13,6 +13,7 @@ class AppointmentAdmin(ModelAdmin):
         'duration_minutes',
         'status')
     list_filter = ('status', 'appointment_date')
+    exclude = ('visit_notes',)  # private to the treating doctor
     search_fields = ('patient__username', 'doctor__username')
 
 @admin.register(WorkingHours)
