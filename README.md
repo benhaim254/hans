@@ -20,6 +20,7 @@ Doctors can:
 - set their working hours and appointment length, and block out days for leave
 - see each patient's date of birth, blood group, allergies and emergency contact on their appointments, and only for their own patients
 - see their schedule grouped into Today, Upcoming and Past, confirm, decline (with a reason) or propose a different time for pending requests, and mark past ones as completed or a no-show
+- write private visit notes on completed appointments, which patients, other doctors, the API and the admin never see
 - get notified when a patient books or cancels
 
 Admins manage users, profiles, appointments and notifications in the Django admin. Running `createsuperuser` gives the account the admin role.

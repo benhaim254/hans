@@ -8,8 +8,8 @@ from django.views.decorators.http import require_POST
 from users.decorators import role_required
 from users.models import ROLE_DOCTOR, ROLE_PATIENT
 
-from .forms import AppointmentForm, AvailabilityForm, CancelAppointmentForm, NewTimeForm, TimeOffForm
-from .models import CANCELABLE_STATUSES, DOUBLE_BOOKED_MESSAGE, STATUS_PENDING, Appointment, TimeOff
+from .forms import AppointmentForm, AvailabilityForm, CancelAppointmentForm, NewTimeForm, TimeOffForm, VisitNotesForm
+from .models import CANCELABLE_STATUSES, DOUBLE_BOOKED_MESSAGE, STATUS_COMPLETED, STATUS_PENDING, Appointment, TimeOff
 
 
 @role_required(ROLE_PATIENT)
@@ -135,6 +135,19 @@ def complete_appointment(request, appointment_id):
 @role_required(ROLE_DOCTOR)
 def no_show_appointment(request, appointment_id):
     return _doctor_transition(request, appointment_id, Appointment.mark_no_show, 'Appointment marked as a no-show.')
+
+
+@role_required(ROLE_DOCTOR)
+def visit_notes(request, appointment_id):
+    """Private notes on a completed appointment; only the treating doctor can read or edit them."""
+    appointment = get_object_or_404(Appointment.objects.select_related('patient'), appointment_id=appointment_id,
+                                    doctor=request.user, status=STATUS_COMPLETED)
+    form = VisitNotesForm(request.POST or None, instance=appointment)
+    if form.is_valid():
+        form.save()
+        messages.success(request, 'Visit notes saved.')
+        return redirect('doctor_dashboard')
+    return render(request, 'appointments/visit_notes.html', {'appointment': appointment, 'form': form})
 
 
 @role_required(ROLE_DOCTOR)

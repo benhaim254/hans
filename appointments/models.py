@@ -148,6 +148,8 @@ class Appointment(models.Model):
         default=STATUS_PENDING)
 
     cancellation_reason = models.TextField(blank=True, null=True)
+    # Clinical notes for the doctor's eyes only: kept out of the API, the patient's pages and the admin.
+    visit_notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     last_updated = models.DateTimeField(auto_now=True)
 
