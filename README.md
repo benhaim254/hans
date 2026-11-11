@@ -24,7 +24,7 @@ Admins manage users, profiles, appointments and notifications in the Django admi
 ## Design notes
 
 - Roles live on a custom `User` model (`patient`, `doctor`, `admin`). Web views use a `role_required` decorator and API views use DRF permission classes (`IsPatient`, `IsDoctor`). Each user only ever sees their own appointments; asking for someone else's returns 404.
-- Self-registration can create patients and doctors, never admins. Doctor accounts are not verified against a license register, which a real deployment would need.
+- Self-registration can create patients and doctors, never admins. A doctor must give a KMPDC number that is on the register (a local `KmpdcRegister` table standing in for the real KMPDC register). Each number can belong to one account only: the doctor profile holds a one-to-one link to the register entry, so the database itself rejects a second claim. Only verified doctors can be booked.
 - A doctor cannot be double-booked. A partial unique constraint on `(doctor, date, time)` enforces it in the database and ignores canceled appointments, so canceling frees the slot. `Appointment.clean()` runs the same check first so the form and the API return a readable error.
 - Status changes go through `Appointment.confirm()` and `Appointment.cancel()`, so the web views and the API share one set of transition rules.
 - The `notifications` app listens to appointment saves. It stores a `Notification` row and emails the user once the transaction commits. In development, emails print to the terminal.
@@ -57,7 +57,7 @@ Open http://127.0.0.1:8000/. The seed command creates these accounts, all with t
 | Username | Role |
 |---|---|
 | `jane`, `peter` | patient |
-| `dr_amina`, `dr_otieno` | doctor |
+| `dr_amina`, `dr_otieno`, `dr_njeri` | doctor (KMPDC A10234, A10567, A10891) |
 | `admin` | admin (only with `--with-admin`) |
 
 The Django admin is at http://127.0.0.1:8000/admin/.
@@ -72,7 +72,7 @@ uv run python -c "from django.core.management.utils import get_random_secret_key
 
 | Method | Path | Who | What |
 |---|---|---|---|
-| POST | `/api/register/` | anyone | create a patient or doctor account |
+| POST | `/api/register/` | anyone | create a patient or doctor account (doctors send `kmpdc_number`) |
 | POST | `/api/token/` | anyone | get access and refresh tokens (the access token carries the user's role) |
 | POST | `/api/token/refresh/` | anyone | refresh an access token |
 | GET | `/api/appointments/` | patient, doctor | list your own appointments |

@@ -5,7 +5,7 @@ from django.contrib.auth.models import Group
 from unfold.admin import ModelAdmin
 from unfold.forms import AdminPasswordChangeForm, UserChangeForm, UserCreationForm
 
-from .models import DoctorProfile, PatientProfile, User
+from .models import DoctorProfile, KmpdcRegister, PatientProfile, User
 
 admin.site.unregister(Group)
 
@@ -40,6 +40,13 @@ class PatientProfileAdmin(ModelAdmin):
 class DoctorProfileAdmin(ModelAdmin):
     list_display = ['user', 'gender', 'phone_number',
                     'date_of_birth', 'department',
-                    'specialization', 'license_number']
+                    'specialization', 'kmpdc']
     list_filter = ['gender', 'department']
-    search_fields = ['user__username', 'license_number']
+    search_fields = ['user__username', 'kmpdc__license_number']
+    autocomplete_fields = ['kmpdc']
+
+
+@admin.register(KmpdcRegister)
+class KmpdcRegisterAdmin(ModelAdmin):
+    list_display = ['license_number', 'full_name', 'doctor']
+    search_fields = ['license_number', 'full_name']

@@ -9,6 +9,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from users.models import ROLE_DOCTOR, ROLE_PATIENT, User
+from users.tests import make_verified_doctor
 
 from .models import STATUS_CANCELED, STATUS_PENDING, STATUS_SCHEDULED, Appointment
 
@@ -19,8 +20,8 @@ class AppointmentTestCase(TestCase):
     def setUp(self):
         self.patient = User.objects.create_user('pat', password='x', role=ROLE_PATIENT)
         self.other_patient = User.objects.create_user('pat2', password='x', role=ROLE_PATIENT)
-        self.doctor = User.objects.create_user('doc', password='x', role=ROLE_DOCTOR)
-        self.other_doctor = User.objects.create_user('doc2', password='x', role=ROLE_DOCTOR)
+        self.doctor = make_verified_doctor('doc')
+        self.other_doctor = make_verified_doctor('doc2')
 
     def book(self, patient=None, status=STATUS_PENDING, **overrides):
         fields = dict(patient=patient or self.patient, doctor=self.doctor,
@@ -64,6 +65,12 @@ class PatientWebTests(AppointmentTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'already booked')
         self.assertEqual(Appointment.objects.count(), 1)
+
+    def test_unverified_doctor_cannot_be_booked(self):
+        unverified = User.objects.create_user('nolicense', password='x', role=ROLE_DOCTOR)
+        response = self.post_booking(doctor=unverified.pk)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Appointment.objects.exists())
 
     def test_past_date_rejected(self):
         response = self.post_booking(appointment_date=timezone.localdate() - timedelta(days=1))
@@ -181,5 +188,5 @@ class SeedDemoTests(TestCase):
     def test_seed_is_idempotent(self):
         call_command('seed_demo', stdout=StringIO())
         call_command('seed_demo', stdout=StringIO())
-        self.assertEqual(User.objects.filter(role=ROLE_DOCTOR).count(), 2)
+        self.assertEqual(User.objects.verified_doctors().count(), 3)
         self.assertEqual(Appointment.objects.count(), 3)

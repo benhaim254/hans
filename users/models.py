@@ -1,4 +1,5 @@
 from django.contrib.auth.models import AbstractUser, UserManager as DjangoUserManager
+from django.core.exceptions import ValidationError
 from django.db import models
 from phonenumber_field.modelfields import PhoneNumberField
 
@@ -48,6 +49,10 @@ class UserManager(DjangoUserManager):
         # Superusers are admins, not patients, so they skip the patient dashboard and profile.
         extra_fields.setdefault('role', ROLE_ADMIN)
         return super().create_superuser(username, email, password, **extra_fields)
+
+    def verified_doctors(self):
+        """Doctors whose KMPDC number has been checked; only these can be booked."""
+        return self.filter(role=ROLE_DOCTOR, doctorprofile__kmpdc__isnull=False)
 
 
 class User(AbstractUser):
@@ -123,7 +128,9 @@ class DoctorProfile(CommonProfile):
     department = models.CharField(max_length=20, choices=DEPARTMENT_CHOICES,
                                   blank=True, default='general')
     specialization = models.CharField(max_length=100, blank=True)
-    license_number = models.CharField(max_length=50, blank=True, help_text="KMPDC license number")
+    # One register entry per doctor: the OneToOne makes reusing a number impossible at the database level.
+    kmpdc = models.OneToOneField('KmpdcRegister', on_delete=models.PROTECT, null=True, blank=True,
+                                 related_name='doctor', verbose_name='KMPDC number')
     available_days= models.CharField(max_length=100, blank=True, help_text="e.g Mon, Wed, Fri")
     
     class Meta:
@@ -131,3 +138,38 @@ class DoctorProfile(CommonProfile):
     
     def __str__(self):
         return f"Dr. {self.user.username} - {self.department}"
+
+
+class KmpdcRegister(models.Model):
+    """
+    Local stand-in for the KMPDC register of licensed practitioners.
+    Doctors can only sign up with a number listed here.
+    """
+    license_number = models.CharField(max_length=20, unique=True)
+    full_name = models.CharField(max_length=100)
+
+    class Meta:
+        verbose_name = 'KMPDC register entry'
+        verbose_name_plural = 'KMPDC register'
+        ordering = ['license_number']
+
+    def __str__(self):
+        return f"{self.license_number} ({self.full_name})"
+
+    def save(self, *args, **kwargs):
+        self.license_number = normalize_kmpdc(self.license_number)
+        super().save(*args, **kwargs)
+
+
+def normalize_kmpdc(number):
+    return (number or '').strip().upper()
+
+
+def claim_kmpdc(number):
+    """Return the unclaimed register entry for a KMPDC number, or raise ValidationError."""
+    entry = KmpdcRegister.objects.filter(license_number=normalize_kmpdc(number)).first()
+    if entry is None:
+        raise ValidationError('This KMPDC number is not on the register.')
+    if DoctorProfile.objects.filter(kmpdc=entry).exists():
+        raise ValidationError('This KMPDC number is already registered to another account.')
+    return entry
