@@ -105,6 +105,11 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
+        # Every transaction takes the write lock when it starts, so booking checks and saves
+        # can't interleave (see appointments.models.lock_doctor_schedule). Waits up to 20s for the lock.
+        'OPTIONS': {'transaction_mode': 'IMMEDIATE', 'timeout': 20},
+        # A file, not shared-cache memory, so concurrency tests get real SQLite locking.
+        'TEST': {'NAME': BASE_DIR / '.test-db.sqlite3'},
     }
 }
 
