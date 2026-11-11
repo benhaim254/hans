@@ -373,3 +373,31 @@ class CloseAppointmentTests(AppointmentTestCase):
         self.assertEqual(api.post(reverse('appointment-complete', args=[self.past.appointment_id])).status_code, 400)
         api.force_authenticate(self.patient)
         self.assertEqual(api.post(reverse('appointment-complete', args=[self.past.appointment_id])).status_code, 403)
+
+
+class PatientDetailsForDoctorTests(AppointmentTestCase):
+    def test_doctor_sees_own_patients_details(self):
+        profile = self.patient.patientprofile
+        profile.allergies = 'Penicillin'
+        profile.blood_group = 'O+'
+        profile.save()
+        self.book()
+        self.client.force_login(self.doctor)
+        response = self.client.get(reverse('doctor_dashboard'))
+        self.assertContains(response, 'Penicillin')
+        self.assertContains(response, 'O+')
+
+    def test_other_doctor_sees_nothing(self):
+        self.patient.patientprofile.allergies = 'Penicillin'
+        self.patient.patientprofile.save()
+        self.book()
+        self.client.force_login(self.other_doctor)
+        self.assertNotContains(self.client.get(reverse('doctor_dashboard')), 'Penicillin')
+
+    def test_dashboard_query_count_does_not_grow_with_appointments(self):
+        for hour in (9, 10, 11):
+            self.book(appointment_time=time(hour, 0))
+        self.client.force_login(self.doctor)
+        # session, user, working-hours check, appointments with patient profiles
+        with self.assertNumQueries(4):
+            self.client.get(reverse('doctor_dashboard'))

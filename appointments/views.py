@@ -35,7 +35,7 @@ def patient_dashboard(request):
 def doctor_dashboard(request):
     appointments = (Appointment.objects
                     .filter(doctor=request.user)
-                    .select_related('patient'))
+                    .select_related('patient__patientprofile'))
     return render(request, 'appointments/doctor_dashboard.html', {
         'appointments': appointments,
         'has_working_hours': request.user.working_hours.exists(),
