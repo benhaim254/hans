@@ -13,12 +13,14 @@ STATUS_PENDING = 'pending'
 STATUS_SCHEDULED = 'scheduled'
 STATUS_COMPLETED = 'completed'
 STATUS_CANCELED = 'canceled'
+STATUS_NO_SHOW = 'no_show'
 
 STATUS_TYPES = [
     (STATUS_PENDING, 'Pending'),
     (STATUS_SCHEDULED, 'Scheduled'),
     (STATUS_COMPLETED, 'Completed'),
     (STATUS_CANCELED, 'Canceled'),
+    (STATUS_NO_SHOW, 'No-show'),
 ]
 
 CANCELABLE_STATUSES = (STATUS_PENDING, STATUS_SCHEDULED)
@@ -134,6 +136,11 @@ class Appointment(models.Model):
                 f"on {self.appointment_date} at {self.appointment_time}")
 
     @property
+    def has_started(self):
+        starts_at = timezone.make_aware(datetime.combine(self.appointment_date, self.appointment_time))
+        return starts_at <= timezone.now()
+
+    @property
     def end_time(self):
         return _add_minutes(self.appointment_time, self.duration_minutes)
 
@@ -171,6 +178,20 @@ class Appointment(models.Model):
             raise ValidationError('Only pending appointments can be confirmed.')
         self.status = STATUS_SCHEDULED
         self.save(update_fields=['status', 'last_updated'])
+
+    def _finish(self, status):
+        if self.status != STATUS_SCHEDULED:
+            raise ValidationError('Only scheduled appointments can be closed.')
+        if not self.has_started:
+            raise ValidationError("This appointment hasn't started yet.")
+        self.status = status
+        self.save(update_fields=['status', 'last_updated'])
+
+    def complete(self):
+        self._finish(STATUS_COMPLETED)
+
+    def mark_no_show(self):
+        self._finish(STATUS_NO_SHOW)
 
     def cancel(self, reason):
         if self.status not in CANCELABLE_STATUSES:

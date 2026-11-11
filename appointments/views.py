@@ -64,6 +64,28 @@ def confirm_appointment(request, appointment_id):
     return redirect('doctor_dashboard')
 
 
+def _doctor_transition(request, appointment_id, change, done_message):
+    appointment = get_object_or_404(Appointment, appointment_id=appointment_id, doctor=request.user)
+    try:
+        change(appointment)
+        messages.success(request, done_message)
+    except ValidationError as error:
+        messages.error(request, error.messages[0])
+    return redirect('doctor_dashboard')
+
+
+@require_POST
+@role_required(ROLE_DOCTOR)
+def complete_appointment(request, appointment_id):
+    return _doctor_transition(request, appointment_id, Appointment.complete, 'Appointment marked as completed.')
+
+
+@require_POST
+@role_required(ROLE_DOCTOR)
+def no_show_appointment(request, appointment_id):
+    return _doctor_transition(request, appointment_id, Appointment.mark_no_show, 'Appointment marked as a no-show.')
+
+
 @require_POST
 @role_required(ROLE_PATIENT)
 def cancel_appointment(request, appointment_id):

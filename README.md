@@ -16,7 +16,8 @@ Patients can:
 
 Doctors can:
 - register, log in and fill in a profile (department, specialization, license number)
-- see the appointments booked with them and confirm pending ones
+- set their working hours and appointment length
+- see the appointments booked with them, confirm pending ones, and mark past ones as completed or a no-show
 - get notified when a patient books or cancels
 
 Admins manage users, profiles, appointments and notifications in the Django admin. Running `createsuperuser` gives the account the admin role.
@@ -27,7 +28,7 @@ Admins manage users, profiles, appointments and notifications in the Django admi
 - Self-registration can create patients and doctors, never admins. A doctor must give a KMPDC number that is on the register (a local `KmpdcRegister` table standing in for the real KMPDC register). Each number can belong to one account only: the doctor profile holds a one-to-one link to the register entry, so the database itself rejects a second claim. Only verified doctors can be booked.
 - Doctors set their own working hours (one range per weekday) and an appointment length of 30 minutes or more on a My availability page. Patients pick from a list of free start times on a 15-minute grid, which the booking page loads from `/api/doctors/<id>/slots/`. The length is copied onto each appointment when it is booked, so a later change doesn't move existing appointments.
 - A doctor cannot be double-booked. `Appointment.clean()`, used by both the form and the API, rejects a booking that overlaps another active appointment. Canceled appointments don't count, so canceling frees the time. In the database, a partial unique constraint on `(doctor, date, time)` stops two active bookings with the same start time. SQLite can't express a full overlap rule; Postgres could, with an exclusion constraint.
-- Status changes go through `Appointment.confirm()` and `Appointment.cancel()`, so the web views and the API share one set of transition rules.
+- Status changes go through `Appointment.confirm()`, `cancel()`, `complete()` and `mark_no_show()`, so the web views and the API share one set of transition rules. A doctor can only mark a scheduled appointment as completed or a no-show once it has started.
 - The `notifications` app listens to appointment saves. It stores a `Notification` row and emails the user once the transaction commits. In development, emails print to the terminal.
 - Profiles (`PatientProfile`, `DoctorProfile`) are created automatically by a `post_save` signal when a user signs up.
 
@@ -81,6 +82,8 @@ uv run python -c "from django.core.management.utils import get_random_secret_key
 | POST | `/api/appointments/` | patient | book an appointment |
 | GET | `/api/appointments/<uuid>/` | patient, doctor | one of your appointments |
 | POST | `/api/appointments/<uuid>/confirm/` | doctor | confirm a pending appointment |
+| POST | `/api/appointments/<uuid>/complete/` | doctor | mark a started appointment as completed |
+| POST | `/api/appointments/<uuid>/no-show/` | doctor | mark a started appointment as a no-show |
 | POST | `/api/appointments/<uuid>/cancel/` | patient | cancel, with `cancellation_reason` |
 
 Example:

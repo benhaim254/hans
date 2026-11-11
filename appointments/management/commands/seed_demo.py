@@ -4,7 +4,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
-from appointments.models import Appointment, WorkingHours
+from appointments.models import STATUS_SCHEDULED, Appointment, WorkingHours
 from users.models import ROLE_DOCTOR, ROLE_PATIENT, DoctorProfile, KmpdcRegister, User
 
 DEMO_PASSWORD = 'hans-demo-2026'
@@ -20,12 +20,12 @@ WORKDAYS = range(5)  # Monday to Friday
 
 
 def next_workday(start, skip):
-    """The workday `skip` workdays after `start` (1 = the next workday)."""
-    day = start
+    """The workday `skip` workdays after `start` (1 = the next workday, -1 = the previous one)."""
+    day, step = start, (1 if skip > 0 else -1)
     while skip:
-        day += timedelta(days=1)
+        day += timedelta(days=step)
         if day.weekday() in WORKDAYS:
-            skip -= 1
+            skip -= step
     return day
 PATIENTS = [
     ('jane', 'Jane', 'Achieng'),
@@ -68,6 +68,10 @@ class Command(BaseCommand):
             Appointment.objects.get_or_create(
                 doctor=doctor, appointment_date=day, appointment_time=at,
                 defaults={'patient': patient, 'reason': reason})
+        # A confirmed appointment that already happened, so the Completed and No-show buttons have something to act on.
+        Appointment.objects.get_or_create(
+            doctor=doctors[1], appointment_date=next_workday(today, -1), appointment_time=time(10, 0),
+            defaults={'patient': patients[1], 'reason': 'Follow-up on test results', 'status': STATUS_SCHEDULED})
 
         if options['with_admin'] and not User.objects.filter(username='admin').exists():
             User.objects.create_superuser('admin', 'admin@hans.local', DEMO_PASSWORD)

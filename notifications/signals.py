@@ -3,7 +3,7 @@ from django.db import transaction
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 
-from appointments.models import STATUS_CANCELED, STATUS_SCHEDULED, Appointment
+from appointments.models import STATUS_CANCELED, STATUS_NO_SHOW, STATUS_SCHEDULED, Appointment
 
 from .models import Notification
 
@@ -40,5 +40,7 @@ def notify_on_appointment_change(sender, instance, created, **kwargs):
         return
     if instance.status == STATUS_SCHEDULED:
         notify(instance.patient, instance, f"Dr. {display_name(instance.doctor)} confirmed your appointment on {when}.")
+    elif instance.status == STATUS_NO_SHOW:
+        notify(instance.patient, instance, f"You were marked as missing your appointment with Dr. {display_name(instance.doctor)} on {when}.")
     elif instance.status == STATUS_CANCELED:
         notify(instance.doctor, instance, f"{display_name(instance.patient)} canceled the appointment on {when}.")

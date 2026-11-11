@@ -41,6 +41,17 @@
                                     {% csrf_token %}
                                     <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-check2 me-1" aria-hidden="true"></i>Confirm</button>
                                 </form>
+                            {% elif appointment.status == 'scheduled' and appointment.has_started %}
+                                <div class="d-inline-flex gap-1">
+                                    <form method="POST" action="{% url 'complete_appointment' appointment.appointment_id %}" class="m-0">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-outline-success"><i class="bi bi-check2-all me-1" aria-hidden="true"></i>Completed</button>
+                                    </form>
+                                    <form method="POST" action="{% url 'no_show_appointment' appointment.appointment_id %}" class="m-0">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-person-x me-1" aria-hidden="true"></i>No-show</button>
+                                    </form>
+                                </div>
                             {% endif %}
                         </td>
                     </tr>

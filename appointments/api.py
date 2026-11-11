@@ -29,7 +29,7 @@ class AppointmentViewSet(mixins.ListModelMixin,
     def get_permissions(self):
         if self.action in ('create', 'cancel'):
             return [IsPatient()]
-        if self.action == 'confirm':
+        if self.action in ('confirm', 'complete', 'no_show'):
             return [IsDoctor()]
         return [IsAuthenticated()]
 
@@ -56,6 +56,14 @@ class AppointmentViewSet(mixins.ListModelMixin,
     @action(detail=True, methods=['post'])
     def confirm(self, request, appointment_id=None):
         return self._transition(lambda appointment: appointment.confirm())
+
+    @action(detail=True, methods=['post'])
+    def complete(self, request, appointment_id=None):
+        return self._transition(lambda appointment: appointment.complete())
+
+    @action(detail=True, methods=['post'], url_path='no-show')
+    def no_show(self, request, appointment_id=None):
+        return self._transition(lambda appointment: appointment.mark_no_show())
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, appointment_id=None):

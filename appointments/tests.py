@@ -1,6 +1,7 @@
 from datetime import time, timedelta
 from io import StringIO
 
+from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.db import IntegrityError
 from django.test import TestCase
@@ -11,7 +12,8 @@ from rest_framework.test import APIClient
 from users.models import ROLE_DOCTOR, ROLE_PATIENT, User
 from users.tests import make_verified_doctor
 
-from .models import STATUS_CANCELED, STATUS_PENDING, STATUS_SCHEDULED, Appointment, WorkingHours, available_slots
+from .models import (STATUS_CANCELED, STATUS_COMPLETED, STATUS_NO_SHOW, STATUS_PENDING, STATUS_SCHEDULED,
+                     Appointment, WorkingHours, available_slots)
 
 TOMORROW = timezone.localdate() + timedelta(days=1)
 
@@ -201,7 +203,9 @@ class SeedDemoTests(TestCase):
         call_command('seed_demo', stdout=StringIO())
         call_command('seed_demo', stdout=StringIO())
         self.assertEqual(User.objects.verified_doctors().count(), 3)
-        self.assertEqual(Appointment.objects.count(), 3)
+        self.assertEqual(Appointment.objects.count(), 4)
+        past = Appointment.objects.get(status=STATUS_SCHEDULED)
+        self.assertTrue(past.has_started)
 
 
 class WorkingHoursBookingTests(AppointmentTestCase):
@@ -320,3 +324,52 @@ class AvailabilityPageTests(AppointmentTestCase):
     def test_patient_cannot_open(self):
         self.client.force_login(self.patient)
         self.assertEqual(self.client.get(self.url).status_code, 403)
+
+
+class CloseAppointmentTests(AppointmentTestCase):
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.doctor)
+        yesterday = timezone.localdate() - timedelta(days=1)
+        self.past = self.book(status=STATUS_SCHEDULED, appointment_date=yesterday)
+
+    def test_doctor_marks_completed(self):
+        self.client.post(reverse('complete_appointment', args=[self.past.appointment_id]))
+        self.past.refresh_from_db()
+        self.assertEqual(self.past.status, STATUS_COMPLETED)
+
+    def test_doctor_marks_no_show_and_patient_is_told(self):
+        self.client.post(reverse('no_show_appointment', args=[self.past.appointment_id]))
+        self.past.refresh_from_db()
+        self.assertEqual(self.past.status, STATUS_NO_SHOW)
+        self.assertIn('missing your appointment', self.patient.notifications.first().message)
+
+    def test_cannot_close_before_it_starts(self):
+        upcoming = self.book(status=STATUS_SCHEDULED, appointment_time=time(10, 0))
+        self.client.post(reverse('complete_appointment', args=[upcoming.appointment_id]))
+        upcoming.refresh_from_db()
+        self.assertEqual(upcoming.status, STATUS_SCHEDULED)
+
+    def test_cannot_close_pending_or_closed_twice(self):
+        pending = self.book(appointment_date=self.past.appointment_date, appointment_time=time(10, 0))
+        response = self.client.post(reverse('complete_appointment', args=[pending.appointment_id]), follow=True)
+        self.assertContains(response, 'Only scheduled appointments can be closed')
+        self.past.complete()
+        with self.assertRaises(ValidationError):
+            self.past.mark_no_show()
+
+    def test_other_doctor_and_patient_cannot_close(self):
+        self.client.force_login(self.other_doctor)
+        self.assertEqual(self.client.post(reverse('complete_appointment', args=[self.past.appointment_id])).status_code, 404)
+        self.client.force_login(self.patient)
+        self.assertEqual(self.client.post(reverse('complete_appointment', args=[self.past.appointment_id])).status_code, 403)
+
+    def test_api_complete_and_no_show(self):
+        api = APIClient()
+        api.force_authenticate(self.doctor)
+        response = api.post(reverse('appointment-no-show', args=[self.past.appointment_id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['status'], STATUS_NO_SHOW)
+        self.assertEqual(api.post(reverse('appointment-complete', args=[self.past.appointment_id])).status_code, 400)
+        api.force_authenticate(self.patient)
+        self.assertEqual(api.post(reverse('appointment-complete', args=[self.past.appointment_id])).status_code, 403)
