@@ -1,14 +1,14 @@
 from django import forms
 
 from hans.forms import BootstrapFormMixin
-from users.models import ROLE_DOCTOR, User
+from users.models import User
 
 from .models import Appointment
 
 
 class AppointmentForm(BootstrapFormMixin, forms.ModelForm):
     doctor = forms.ModelChoiceField(
-        queryset=User.objects.filter(role=ROLE_DOCTOR),
+        queryset=User.objects.verified_doctors(),
         empty_label="Select a Doctor"
     )
 

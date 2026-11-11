@@ -1,13 +1,13 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from users.models import ROLE_DOCTOR, User
+from users.models import User
 
 from .models import Appointment
 
 
 class AppointmentSerializer(serializers.ModelSerializer):
-    doctor = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role=ROLE_DOCTOR))
+    doctor = serializers.PrimaryKeyRelatedField(queryset=User.objects.verified_doctors())
     patient = serializers.StringRelatedField(read_only=True)
 
     class Meta:

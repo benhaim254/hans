@@ -5,13 +5,15 @@ from django.db import transaction
 from django.utils import timezone
 
 from appointments.models import Appointment
-from users.models import ROLE_DOCTOR, ROLE_PATIENT, DoctorProfile, User
+from users.models import ROLE_DOCTOR, ROLE_PATIENT, DoctorProfile, KmpdcRegister, User
 
 DEMO_PASSWORD = 'hans-demo-2026'
 
+# The local KMPDC register holds exactly these three numbers, one per demo doctor.
 DOCTORS = [
-    ('dr_amina', 'Amina', 'Wanjiru', 'cardiology', 'Interventional cardiology'),
-    ('dr_otieno', 'Brian', 'Otieno', 'pediatrics', 'Neonatal care'),
+    ('dr_amina', 'Amina', 'Wanjiru', 'cardiology', 'Interventional cardiology', 'A10234'),
+    ('dr_otieno', 'Brian', 'Otieno', 'pediatrics', 'Neonatal care', 'A10567'),
+    ('dr_njeri', 'Grace', 'Njeri', 'dermatology', 'Skin conditions', 'A10891'),
 ]
 PATIENTS = [
     ('jane', 'Jane', 'Achieng'),
@@ -29,9 +31,15 @@ class Command(BaseCommand):
     @transaction.atomic
     def handle(self, *args, **options):
         doctors = [self._user(username, first, last, ROLE_DOCTOR) for username, first, last, *_ in DOCTORS]
-        for doctor, (_, _, _, department, specialization) in zip(doctors, DOCTORS):
+        for doctor, (_, first, last, department, specialization, number) in zip(doctors, DOCTORS):
+            entry, _ = KmpdcRegister.objects.get_or_create(
+                license_number=number, defaults={'full_name': f'Dr. {first} {last}'})
+            if DoctorProfile.objects.filter(kmpdc=entry).exclude(user=doctor).exists():
+                self.stderr.write(f"KMPDC {number} already belongs to another account; {doctor.username} stays unverified.")
+                entry = None
             DoctorProfile.objects.filter(user=doctor).update(
-                department=department, specialization=specialization, available_days='Mon, Wed, Fri')
+                department=department, specialization=specialization, available_days='Mon, Wed, Fri',
+                kmpdc=entry)
         patients = [self._user(username, first, last, ROLE_PATIENT) for username, first, last in PATIENTS]
 
         today = timezone.localdate()
