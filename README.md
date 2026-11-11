@@ -81,7 +81,7 @@ uv run python -c "from django.core.management.utils import get_random_secret_key
 | POST | `/api/token/` | anyone | get access and refresh tokens (the access token carries the user's role) |
 | POST | `/api/token/refresh/` | anyone | refresh an access token |
 | GET | `/api/doctors/<id>/slots/?date=YYYY-MM-DD` | logged in | free start times for a verified doctor |
-| GET | `/api/appointments/` | patient, doctor | list your own appointments |
+| GET | `/api/appointments/` | patient, doctor | list your own appointments, 50 per page (`?page=2`) |
 | POST | `/api/appointments/` | patient | book an appointment |
 | GET | `/api/appointments/<uuid>/` | patient, doctor | one of your appointments |
 | POST | `/api/appointments/<uuid>/confirm/` | doctor | confirm a pending appointment |

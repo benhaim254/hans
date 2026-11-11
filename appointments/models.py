@@ -84,6 +84,10 @@ def on_leave(doctor_id, day):
     return TimeOff.objects.filter(doctor_id=doctor_id, start_date__lte=day, end_date__gte=day).exists()
 
 
+def _minute_of_day(at):
+    return at.hour * 60 + at.minute
+
+
 def _add_minutes(at, minutes):
     return (datetime.combine(datetime.min, at) + timedelta(minutes=minutes)).time()
 
@@ -111,8 +115,7 @@ def available_slots(doctor, day):
     length = doctor.doctorprofile.appointment_length
     busy = _busy_ranges(doctor.pk, day)
     now = timezone.localtime().time() if day == today else None
-    open_at = hours.start_time.hour * 60 + hours.start_time.minute
-    close_at = hours.end_time.hour * 60 + hours.end_time.minute
+    open_at, close_at = _minute_of_day(hours.start_time), _minute_of_day(hours.end_time)
     slots = []
     for minute in range(open_at, close_at - length + 1, SLOT_STEP_MINUTES):
         start = time(minute // 60, minute % 60)
@@ -155,6 +158,7 @@ class Appointment(models.Model):
 
     class Meta:
         ordering = ['-appointment_date', '-appointment_time']
+        indexes = [models.Index(fields=['doctor', 'appointment_date'], name='appointment_doctor_day')]
         constraints = [
             # Database backstop: SQLite can't reject overlapping ranges, but it can reject identical starts.
             models.UniqueConstraint(
@@ -206,7 +210,9 @@ class Appointment(models.Model):
         hours = self.doctor.working_hours.filter(weekday=self.appointment_date.weekday()).first()
         if hours is None:
             raise ValidationError({'appointment_date': "The doctor doesn't work on that day."})
-        if self.appointment_time < hours.start_time or self.end_time > hours.end_time:
+        # Compare in minutes: a time-of-day end wraps past midnight (23:45 + 30 min = 00:15).
+        ends_at = _minute_of_day(self.appointment_time) + self.duration_minutes
+        if self.appointment_time < hours.start_time or ends_at > _minute_of_day(hours.end_time):
             raise ValidationError({'appointment_time': (
                 f"A {self.duration_minutes}-minute appointment must fit between "
                 f"{hours.start_time:%H:%M} and {hours.end_time:%H:%M}.")})
@@ -255,12 +261,16 @@ class Appointment(models.Model):
     def accept_proposal(self):
         if self.status != STATUS_PROPOSED:
             raise ValidationError('There is no proposed time to accept.')
+        if self.has_started:
+            raise ValidationError('The proposed time has already passed. Please reschedule.')
         self.status = STATUS_SCHEDULED
         self.save(update_fields=['status', 'last_updated'])
 
     def confirm(self):
         if self.status != STATUS_PENDING:
             raise ValidationError('Only pending appointments can be confirmed.')
+        if self.has_started:
+            raise ValidationError('This request is for a time that has already passed.')
         self.status = STATUS_SCHEDULED
         self.save(update_fields=['status', 'last_updated'])
 

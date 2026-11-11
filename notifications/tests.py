@@ -63,3 +63,10 @@ class AppointmentNotificationTests(TestCase):
         self.assertEqual(response.context['unread_notifications'], 1)
         self.client.get(reverse('notifications:list'))
         self.assertEqual(self.client.get(reverse('users:profile_edit')).context['unread_notifications'], 0)
+
+
+    def test_list_marks_only_shown_notifications_read(self):
+        Notification.objects.bulk_create(Notification(user=self.patient, message=f'n{i}') for i in range(55))
+        self.client.force_login(self.patient)
+        self.client.get(reverse('notifications:list'))
+        self.assertEqual(Notification.objects.filter(user=self.patient, is_read=False).count(), 5)

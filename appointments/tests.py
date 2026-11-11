@@ -1,4 +1,4 @@
-from datetime import time, timedelta
+from datetime import datetime, time, timedelta
 from io import StringIO
 from unittest import mock
 
@@ -176,7 +176,8 @@ class AppointmentApiTests(AppointmentTestCase):
         mine = self.book()
         self.book(patient=self.other_patient, doctor=self.other_doctor)
         response = self.as_user(self.patient).get(self.list_url)
-        self.assertEqual([a['appointment_id'] for a in response.data], [str(mine.appointment_id)])
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual([a['appointment_id'] for a in response.data['results']], [str(mine.appointment_id)])
 
     def test_doctor_confirms_via_api(self):
         appointment = self.book()
@@ -646,3 +647,80 @@ class VisitNotesTests(AppointmentTestCase):
         upcoming = self.book(status=STATUS_SCHEDULED)
         self.client.force_login(self.doctor)
         self.assertEqual(self.client.get(reverse('visit_notes', args=[upcoming.appointment_id])).status_code, 404)
+
+
+class ReviewFixTests(AppointmentTestCase):
+    """Regression tests for the code-review findings."""
+
+    def api_book(self, at, day=None):
+        api = APIClient()
+        api.force_authenticate(self.patient)
+        return api.post(reverse('appointment-list'), {
+            'doctor': self.doctor.pk, 'appointment_date': day or TOMORROW, 'appointment_time': at})
+
+    def test_api_enforces_every_booking_rule(self):
+        set_hours(self.doctor, length=60)
+        self.book(patient=self.other_patient)  # 09:00 to 10:00
+        self.assertIn('already booked', str(self.api_book('09:30').data))
+        self.assertIn('must fit between', str(self.api_book('16:30').data))
+        self.assertIn('in the past', str(self.api_book('10:00', day=timezone.localdate() - timedelta(days=1)).data))
+        TimeOff.objects.create(doctor=self.doctor, start_date=TOMORROW, end_date=TOMORROW)
+        self.assertIn('on leave', str(self.api_book('11:00').data))
+        self.assertEqual(Appointment.objects.count(), 1)
+
+    def test_appointment_cannot_run_past_midnight(self):
+        set_hours(self.doctor, start=time(20, 0), end=time(23, 59), length=30)
+        self.assertIn('must fit between', str(self.api_book('23:45').data))
+        self.assertNotIn(time(23, 45), available_slots(self.doctor, TOMORROW))
+        self.assertEqual(self.api_book('23:15').status_code, 201)
+
+    def test_same_day_slots_and_bookings_respect_the_clock(self):
+        today = timezone.localdate()
+        ten_past_ten = timezone.make_aware(datetime.combine(today, time(10, 5)))
+        with mock.patch('django.utils.timezone.now', return_value=ten_past_ten):
+            self.assertEqual(available_slots(self.doctor, today)[0], time(10, 15))
+            self.assertIn('already passed', str(self.api_book('09:00', day=today).data))
+
+    def test_last_day_of_time_off_is_blocked(self):
+        TimeOff.objects.create(doctor=self.doctor, start_date=TOMORROW - timedelta(days=2), end_date=TOMORROW)
+        self.assertEqual(available_slots(self.doctor, TOMORROW), [])
+
+    def test_cannot_confirm_or_accept_a_time_that_has_passed(self):
+        yesterday = timezone.localdate() - timedelta(days=1)
+        stale_request = self.book(appointment_date=yesterday)
+        with self.assertRaisesMessage(ValidationError, 'already passed'):
+            stale_request.confirm()
+        proposal = self.book(appointment_time=time(13, 0))
+        proposal.propose(TOMORROW, time(14, 0))
+        Appointment.objects.filter(pk=proposal.pk).update(appointment_date=yesterday)
+        proposal.refresh_from_db()
+        with self.assertRaisesMessage(ValidationError, 'already passed'):
+            proposal.accept_proposal()
+
+    def test_reschedule_from_proposed_and_back_to_same_time_tell_doctor(self):
+        appointment = self.book(status=STATUS_SCHEDULED)
+        appointment.reschedule(TOMORROW, time(9, 0))  # same time, but it needs confirming again
+        self.assertEqual(appointment.status, STATUS_PENDING)
+        self.assertIn('moved their appointment', self.doctor.notifications.first().message)
+        appointment.propose(TOMORROW, time(11, 0))
+        appointment.reschedule(TOMORROW, time(12, 0))
+        appointment.refresh_from_db()
+        self.assertEqual((appointment.status, appointment.appointment_time), (STATUS_PENDING, time(12, 0)))
+
+    def test_rejected_transitions_leave_state_alone(self):
+        appointment = self.book(status=STATUS_COMPLETED, appointment_date=timezone.localdate() - timedelta(days=1))
+        for change in (appointment.confirm, appointment.accept_proposal, lambda: appointment.decline('x'),
+                       lambda: appointment.cancel('x'), lambda: appointment.propose(TOMORROW, time(10, 0)),
+                       lambda: appointment.reschedule(TOMORROW, time(10, 0))):
+            with self.assertRaises(ValidationError):
+                change()
+        appointment.refresh_from_db()
+        self.assertEqual(appointment.status, STATUS_COMPLETED)
+
+    def test_move_that_loses_a_race_keeps_original_time(self):
+        appointment = self.book()
+        self.book(patient=self.other_patient, appointment_time=time(11, 0))
+        with mock.patch.object(Appointment, '_check_free'), self.assertRaisesMessage(ValidationError, 'already booked'):
+            appointment.reschedule(TOMORROW, time(11, 0))
+        appointment.refresh_from_db()
+        self.assertEqual(appointment.appointment_time, time(9, 0))
