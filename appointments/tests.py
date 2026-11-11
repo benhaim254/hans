@@ -1,5 +1,6 @@
 from datetime import time, timedelta
 from io import StringIO
+from unittest import mock
 
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
@@ -398,6 +399,31 @@ class PatientDetailsForDoctorTests(AppointmentTestCase):
         for hour in (9, 10, 11):
             self.book(appointment_time=time(hour, 0))
         self.client.force_login(self.doctor)
-        # session, user, working-hours check, appointments with patient profiles
-        with self.assertNumQueries(4):
+        # session, user, working-hours check, appointments with patient profiles, unread count
+        with self.assertNumQueries(5):
             self.client.get(reverse('doctor_dashboard'))
+
+
+class SameMomentBookingTests(AppointmentTestCase):
+    """Two bookings that both pass validation before either is saved: the database rejects the second."""
+
+    def setUp(self):
+        super().setUp()
+        self.book(patient=self.other_patient)  # already holds 09:00
+
+    def test_web_shows_error_instead_of_crashing(self):
+        self.client.force_login(self.patient)
+        with mock.patch.object(Appointment, 'clean'):
+            response = self.client.post(reverse('patient_dashboard'), {
+                'doctor': self.doctor.pk, 'appointment_date': TOMORROW, 'appointment_time': '09:00'})
+        self.assertContains(response, 'already booked')
+        self.assertEqual(Appointment.objects.count(), 1)
+
+    def test_api_returns_400(self):
+        api = APIClient()
+        api.force_authenticate(self.patient)
+        with mock.patch.object(Appointment, 'clean'):
+            response = api.post(reverse('appointment-list'), {
+                'doctor': self.doctor.pk, 'appointment_date': TOMORROW, 'appointment_time': '09:00'})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Appointment.objects.count(), 1)

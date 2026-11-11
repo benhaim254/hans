@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
 from django.utils.dateparse import parse_date
 from rest_framework import mixins, serializers, viewsets
@@ -11,7 +12,7 @@ from rest_framework.response import Response
 from users.models import ROLE_DOCTOR, ROLE_PATIENT, User
 from users.permissions import IsDoctor, IsPatient
 
-from .models import Appointment, available_slots
+from .models import DOUBLE_BOOKED_MESSAGE, Appointment, available_slots
 from .serializers import AppointmentSerializer, CancelSerializer
 
 
@@ -43,7 +44,11 @@ class AppointmentViewSet(mixins.ListModelMixin,
         return queryset.none()
 
     def perform_create(self, serializer):
-        serializer.save(patient=self.request.user)
+        try:
+            with transaction.atomic():
+                serializer.save(patient=self.request.user)
+        except IntegrityError:  # someone took the same slot between validation and the insert
+            raise serializers.ValidationError({'detail': DOUBLE_BOOKED_MESSAGE})
 
     def _transition(self, change):
         appointment = self.get_object()

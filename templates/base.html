@@ -41,7 +41,7 @@
                         {% if request.user.role == 'doctor' %}
                             <li class="nav-item"><a class="nav-link" href="{% url 'availability' %}"><i class="bi bi-clock-history me-1" aria-hidden="true"></i>Availability</a></li>
                         {% endif %}
-                        <li class="nav-item"><a class="nav-link" href="{% url 'notifications:list' %}"><i class="bi bi-bell me-1" aria-hidden="true"></i>Notifications</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{% url 'notifications:list' %}"><i class="bi bi-bell me-1" aria-hidden="true"></i>Notifications{% if unread_notifications %} <span class="badge rounded-pill bg-danger">{{ unread_notifications }}<span class="visually-hidden"> unread</span></span>{% endif %}</a></li>
                         <li class="nav-item"><a class="nav-link" href="{% url 'users:profile_edit' %}"><i class="bi bi-person me-1" aria-hidden="true"></i>Profile</a></li>
                     {% endif %}
                     <li class="nav-item ms-md-3">

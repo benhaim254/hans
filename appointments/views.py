@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
@@ -7,7 +8,7 @@ from users.decorators import role_required
 from users.models import ROLE_DOCTOR, ROLE_PATIENT
 
 from .forms import AppointmentForm, AvailabilityForm, CancelAppointmentForm
-from .models import Appointment
+from .models import DOUBLE_BOOKED_MESSAGE, Appointment
 
 
 @role_required(ROLE_PATIENT)
@@ -16,9 +17,14 @@ def patient_dashboard(request):
         form = AppointmentForm(request.POST)
         form.instance.patient = request.user
         if form.is_valid():
-            form.save()
-            messages.success(request, 'Appointment requested. The doctor will confirm it shortly.')
-            return redirect('patient_dashboard')
+            try:
+                with transaction.atomic():
+                    form.save()
+            except IntegrityError:  # someone took the same slot between our check and the insert
+                form.add_error(None, DOUBLE_BOOKED_MESSAGE)
+            else:
+                messages.success(request, 'Appointment requested. The doctor will confirm it shortly.')
+                return redirect('patient_dashboard')
     else:
         form = AppointmentForm()
 
