@@ -560,3 +560,53 @@ class DeclineAndProposeTests(AppointmentTestCase):
         self.assertEqual(api.post(reverse('appointment-decline', args=[other.appointment_id]), {}).status_code, 400)
         response = api.post(reverse('appointment-decline', args=[other.appointment_id]), {'cancellation_reason': 'Away'})
         self.assertEqual(response.data['status'], STATUS_DECLINED)
+
+
+class RescheduleTests(AppointmentTestCase):
+    def setUp(self):
+        super().setUp()
+        self.appointment = self.book(status=STATUS_SCHEDULED)  # tomorrow 09:00
+        self.url = reverse('reschedule_appointment', args=[self.appointment.appointment_id])
+        self.client.force_login(self.patient)
+
+    def test_patient_moves_appointment_back_to_pending_and_doctor_is_told(self):
+        response = self.client.post(self.url, {'appointment_date': TOMORROW, 'appointment_time': '14:00'})
+        self.assertRedirects(response, reverse('patient_dashboard'))
+        self.appointment.refresh_from_db()
+        self.assertEqual((self.appointment.status, self.appointment.appointment_time), (STATUS_PENDING, time(14, 0)))
+        self.assertIn(time(9, 0), available_slots(self.doctor, TOMORROW))
+        self.assertIn('moved their appointment', self.doctor.notifications.first().message)
+
+    def test_pending_to_pending_move_also_tells_doctor(self):
+        self.appointment.status = STATUS_PENDING
+        self.appointment.save()
+        self.client.post(self.url, {'appointment_date': TOMORROW, 'appointment_time': '15:00'})
+        self.assertIn('moved their appointment', self.doctor.notifications.first().message)
+
+    def test_rules_apply_and_failure_keeps_original(self):
+        self.book(patient=self.other_patient, appointment_time=time(14, 0))
+        self.assertContains(self.client.post(self.url, {'appointment_date': TOMORROW, 'appointment_time': '14:00'}),
+                            'already booked')
+        yesterday = timezone.localdate() - timedelta(days=1)
+        self.assertContains(self.client.post(self.url, {'appointment_date': yesterday, 'appointment_time': '10:00'}),
+                            'in the past')
+        self.appointment.refresh_from_db()
+        self.assertEqual((self.appointment.status, self.appointment.appointment_time), (STATUS_SCHEDULED, time(9, 0)))
+
+    def test_only_own_upcoming_appointments(self):
+        self.client.force_login(self.other_patient)
+        self.assertEqual(self.client.get(self.url).status_code, 404)
+        self.appointment.cancel('changed my mind')
+        self.client.force_login(self.patient)
+        self.assertEqual(self.client.get(self.url).status_code, 404)
+
+    def test_api_reschedule(self):
+        api = APIClient()
+        api.force_authenticate(self.patient)
+        response = api.post(reverse('appointment-reschedule', args=[self.appointment.appointment_id]),
+                            {'appointment_date': TOMORROW, 'appointment_time': '10:00'})
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['status'], STATUS_PENDING)
+        api.force_authenticate(self.doctor)
+        self.assertEqual(api.post(reverse('appointment-reschedule', args=[self.appointment.appointment_id]),
+                                  {'appointment_date': TOMORROW, 'appointment_time': '11:00'}).status_code, 403)

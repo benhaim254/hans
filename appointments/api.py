@@ -28,7 +28,7 @@ class AppointmentViewSet(mixins.ListModelMixin,
     lookup_field = 'appointment_id'
 
     def get_permissions(self):
-        if self.action in ('create', 'cancel', 'accept'):
+        if self.action in ('create', 'cancel', 'accept', 'reschedule'):
             return [IsPatient()]
         if self.action in ('confirm', 'complete', 'no_show', 'decline', 'propose'):
             return [IsDoctor()]
@@ -83,6 +83,13 @@ class AppointmentViewSet(mixins.ListModelMixin,
         body.is_valid(raise_exception=True)
         new = body.validated_data
         return self._transition(lambda appointment: appointment.propose(new['appointment_date'], new['appointment_time']))
+
+    @action(detail=True, methods=['post'])
+    def reschedule(self, request, appointment_id=None):
+        body = NewTimeSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        new = body.validated_data
+        return self._transition(lambda appointment: appointment.reschedule(new['appointment_date'], new['appointment_time']))
 
     @action(detail=True, methods=['post'])
     def accept(self, request, appointment_id=None):

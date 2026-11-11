@@ -244,6 +244,12 @@ class Appointment(models.Model):
             raise ValidationError('You can only propose a new time for a pending request.')
         self._move_to(day, at, STATUS_PROPOSED)
 
+    def reschedule(self, day, at):
+        """Patient moves their own appointment; the doctor has to confirm the new time."""
+        if self.status not in CANCELABLE_STATUSES:
+            raise ValidationError('Only upcoming appointments can be rescheduled.')
+        self._move_to(day, at, STATUS_PENDING)
+
     def accept_proposal(self):
         if self.status != STATUS_PROPOSED:
             raise ValidationError('There is no proposed time to accept.')
