@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Respond to request{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <a href="{% url 'doctor_dashboard' %}" class="d-inline-block mb-3"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i>Back to schedule</a>
+        <div class="card mb-4">
+            <div class="card-body">
+                <h1 class="h5 mb-1">Request from {{ appointment.patient.get_full_name|default:appointment.patient.username }}</h1>
+                <p class="text-secondary mb-0">
+                    {{ appointment.appointment_date|date:"D j M Y" }}, {{ appointment.appointment_time|time:"H:i" }} to {{ appointment.end_time|time:"H:i" }}
+                    {% if appointment.reason %}· {{ appointment.reason }}{% endif %}
+                </p>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-body">
+                <h2 class="h6 mb-3"><i class="bi bi-calendar-event me-1" aria-hidden="true"></i>Propose a different time</h2>
+                <form method="POST" data-slot-picker data-doctor-id="{{ request.user.pk }}"
+                      data-selected-time="{{ propose_form.appointment_time.value|default_if_none:''|slice:':5' }}">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="propose">
+                    {{ propose_form.as_div }}
+                    <p class="small text-secondary" data-slot-note aria-live="polite"></p>
+                    <button type="submit" class="btn btn-primary">Propose this time</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-body">
+                <h2 class="h6 mb-3"><i class="bi bi-x-circle me-1" aria-hidden="true"></i>Decline the request</h2>
+                <form method="POST">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="decline">
+                    {{ decline_form.cancellation_reason.errors }}
+                    <label for="decline-reason">Reason, shown to the patient</label>
+                    <input type="text" name="cancellation_reason" id="decline-reason" class="form-control mb-3" maxlength="500" required>
+                    <button type="submit" class="btn btn-outline-danger">Decline request</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% include "appointments/_slot_picker.html" %}
+{% endblock %}

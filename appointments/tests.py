@@ -13,7 +13,8 @@ from rest_framework.test import APIClient
 from users.models import ROLE_DOCTOR, ROLE_PATIENT, User
 from users.tests import make_verified_doctor
 
-from .models import (STATUS_CANCELED, STATUS_COMPLETED, STATUS_NO_SHOW, STATUS_PENDING, STATUS_SCHEDULED,
+from .models import (STATUS_CANCELED, STATUS_COMPLETED, STATUS_DECLINED, STATUS_NO_SHOW, STATUS_PENDING,
+                     STATUS_PROPOSED, STATUS_SCHEDULED,
                      Appointment, TimeOff, WorkingHours, available_slots)
 
 TOMORROW = timezone.localdate() + timedelta(days=1)
@@ -483,3 +484,79 @@ class TimeOffTests(AppointmentTestCase):
         self.client.force_login(self.doctor)
         self.client.post(reverse('delete_time_off', args=[self.leave.pk]))
         self.assertFalse(TimeOff.objects.exists())
+
+
+class DeclineAndProposeTests(AppointmentTestCase):
+    def setUp(self):
+        super().setUp()
+        self.request = self.book()  # pending, tomorrow 09:00
+        self.url = reverse('respond_to_request', args=[self.request.appointment_id])
+
+    def test_decline_with_reason_frees_slot_and_tells_patient(self):
+        self.client.force_login(self.doctor)
+        self.client.post(self.url, {'action': 'decline', 'cancellation_reason': 'Fully booked that week'})
+        self.request.refresh_from_db()
+        self.assertEqual(self.request.status, STATUS_DECLINED)
+        self.assertEqual(self.request.cancellation_reason, 'Fully booked that week')
+        self.assertIn(time(9, 0), available_slots(self.doctor, TOMORROW))
+        self.assertIn('declined your request', self.patient.notifications.first().message)
+
+    def test_propose_moves_and_holds_new_time(self):
+        self.client.force_login(self.doctor)
+        self.client.post(self.url, {'action': 'propose', 'appointment_date': TOMORROW, 'appointment_time': '11:00'})
+        self.request.refresh_from_db()
+        self.assertEqual(self.request.status, STATUS_PROPOSED)
+        self.assertEqual(self.request.appointment_time, time(11, 0))
+        slots = available_slots(self.doctor, TOMORROW)
+        self.assertIn(time(9, 0), slots)
+        self.assertNotIn(time(11, 0), slots)
+        self.assertIn('proposed a new time', self.patient.notifications.first().message)
+
+    def test_propose_rejects_taken_or_outside_time_and_keeps_original(self):
+        self.book(patient=self.other_patient, appointment_time=time(11, 0))
+        self.client.force_login(self.doctor)
+        response = self.client.post(self.url, {'action': 'propose', 'appointment_date': TOMORROW, 'appointment_time': '11:00'})
+        self.assertContains(response, 'already booked')
+        response = self.client.post(self.url, {'action': 'propose', 'appointment_date': TOMORROW, 'appointment_time': '18:00'})
+        self.assertContains(response, 'must fit between')
+        self.request.refresh_from_db()
+        self.assertEqual((self.request.status, self.request.appointment_time), (STATUS_PENDING, time(9, 0)))
+
+    def test_patient_accepts_or_declines_proposal(self):
+        self.request.propose(TOMORROW, time(11, 0))
+        self.client.force_login(self.patient)
+        self.client.post(reverse('accept_proposal', args=[self.request.appointment_id]))
+        self.request.refresh_from_db()
+        self.assertEqual(self.request.status, STATUS_SCHEDULED)
+        self.assertIn('accepted the new time', self.doctor.notifications.first().message)
+
+        other = self.book(appointment_time=time(13, 0))
+        other.propose(TOMORROW, time(14, 0))
+        self.client.post(reverse('cancel_appointment', args=[other.appointment_id]),
+                         {'cancellation_reason': "The proposed time doesn't work for me."})
+        other.refresh_from_db()
+        self.assertEqual(other.status, STATUS_CANCELED)
+
+    def test_only_assigned_doctor_and_only_pending(self):
+        self.client.force_login(self.other_doctor)
+        self.assertEqual(self.client.get(self.url).status_code, 404)
+        self.request.confirm()
+        self.client.force_login(self.doctor)
+        self.assertEqual(self.client.get(self.url).status_code, 404)
+
+    def test_api_decline_propose_accept(self):
+        api = APIClient()
+        api.force_authenticate(self.doctor)
+        response = api.post(reverse('appointment-propose', args=[self.request.appointment_id]),
+                            {'appointment_date': TOMORROW, 'appointment_time': '10:00'})
+        self.assertEqual(response.data['status'], STATUS_PROPOSED)
+        api.force_authenticate(self.patient)
+        self.assertEqual(api.post(reverse('appointment-propose', args=[self.request.appointment_id]),
+                                  {'appointment_date': TOMORROW, 'appointment_time': '10:30'}).status_code, 403)
+        response = api.post(reverse('appointment-accept', args=[self.request.appointment_id]))
+        self.assertEqual(response.data['status'], STATUS_SCHEDULED)
+        other = self.book(appointment_time=time(15, 0))
+        api.force_authenticate(self.doctor)
+        self.assertEqual(api.post(reverse('appointment-decline', args=[other.appointment_id]), {}).status_code, 400)
+        response = api.post(reverse('appointment-decline', args=[other.appointment_id]), {'cancellation_reason': 'Away'})
+        self.assertEqual(response.data['status'], STATUS_DECLINED)

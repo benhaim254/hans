@@ -31,3 +31,8 @@ class AppointmentSerializer(serializers.ModelSerializer):
 
 class CancelSerializer(serializers.Serializer):
     cancellation_reason = serializers.CharField(max_length=500)
+
+
+class NewTimeSerializer(serializers.Serializer):
+    appointment_date = serializers.DateField()
+    appointment_time = serializers.TimeField()

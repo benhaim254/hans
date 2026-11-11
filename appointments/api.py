@@ -13,7 +13,7 @@ from users.models import ROLE_DOCTOR, ROLE_PATIENT, User
 from users.permissions import IsDoctor, IsPatient
 
 from .models import DOUBLE_BOOKED_MESSAGE, Appointment, available_slots
-from .serializers import AppointmentSerializer, CancelSerializer
+from .serializers import AppointmentSerializer, CancelSerializer, NewTimeSerializer
 
 
 class AppointmentViewSet(mixins.ListModelMixin,
@@ -28,9 +28,9 @@ class AppointmentViewSet(mixins.ListModelMixin,
     lookup_field = 'appointment_id'
 
     def get_permissions(self):
-        if self.action in ('create', 'cancel'):
+        if self.action in ('create', 'cancel', 'accept'):
             return [IsPatient()]
-        if self.action in ('confirm', 'complete', 'no_show'):
+        if self.action in ('confirm', 'complete', 'no_show', 'decline', 'propose'):
             return [IsDoctor()]
         return [IsAuthenticated()]
 
@@ -69,6 +69,24 @@ class AppointmentViewSet(mixins.ListModelMixin,
     @action(detail=True, methods=['post'], url_path='no-show')
     def no_show(self, request, appointment_id=None):
         return self._transition(lambda appointment: appointment.mark_no_show())
+
+    @action(detail=True, methods=['post'])
+    def decline(self, request, appointment_id=None):
+        body = CancelSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        reason = body.validated_data['cancellation_reason']
+        return self._transition(lambda appointment: appointment.decline(reason))
+
+    @action(detail=True, methods=['post'])
+    def propose(self, request, appointment_id=None):
+        body = NewTimeSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        new = body.validated_data
+        return self._transition(lambda appointment: appointment.propose(new['appointment_date'], new['appointment_time']))
+
+    @action(detail=True, methods=['post'])
+    def accept(self, request, appointment_id=None):
+        return self._transition(lambda appointment: appointment.accept_proposal())
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, appointment_id=None):

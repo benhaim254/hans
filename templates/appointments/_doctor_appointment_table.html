@@ -48,16 +48,19 @@
                         <td>
                             {% if appointment.reason %}{{ appointment.reason }}{% else %}<span class="text-secondary">None given</span>{% endif %}
                             {% if appointment.cancellation_reason %}
-                                <div class="small text-danger">Canceled: {{ appointment.cancellation_reason }}</div>
+                                <div class="small text-danger">{{ appointment.get_status_display }}: {{ appointment.cancellation_reason }}</div>
                             {% endif %}
                         </td>
                         <td><span class="badge rounded-pill status-{{ appointment.status }}">{{ appointment.get_status_display }}</span></td>
                         <td class="text-end">
                             {% if appointment.status == 'pending' %}
-                                <form method="POST" action="{% url 'confirm_appointment' appointment.appointment_id %}" class="m-0">
-                                    {% csrf_token %}
-                                    <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-check2 me-1" aria-hidden="true"></i>Confirm</button>
-                                </form>
+                                <div class="d-inline-flex gap-1">
+                                    <form method="POST" action="{% url 'confirm_appointment' appointment.appointment_id %}" class="m-0">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-check2 me-1" aria-hidden="true"></i>Confirm</button>
+                                    </form>
+                                    <a href="{% url 'respond_to_request' appointment.appointment_id %}" class="btn btn-sm btn-outline-secondary">Decline or propose</a>
+                                </div>
                             {% elif appointment.status == 'scheduled' and appointment.has_started %}
                                 <div class="d-inline-flex gap-1">
                                     <form method="POST" action="{% url 'complete_appointment' appointment.appointment_id %}" class="m-0">

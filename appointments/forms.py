@@ -1,6 +1,7 @@
 from datetime import time
 
 from django import forms
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
@@ -111,3 +112,22 @@ class TimeOffForm(forms.ModelForm):
         if start and end and end < start:
             self.add_error('end_date', 'The last day cannot be before the first day.')
         return cleaned
+
+
+class NewTimeForm(BootstrapFormMixin, forms.Form):
+    """A new date and free start time, used to propose or reschedule an appointment."""
+    appointment_date = forms.DateField(label='New date', widget=forms.DateInput(attrs={'type': 'date'}))
+    appointment_time = forms.TimeField(label='New time', widget=forms.Select(choices=[('', 'Pick a date first')]))
+
+    def apply(self, change):
+        """Run a model move (propose/reschedule); its rule errors become form errors. True on success."""
+        try:
+            change(self.cleaned_data['appointment_date'], self.cleaned_data['appointment_time'])
+        except ValidationError as error:
+            if hasattr(error, 'error_dict'):
+                for field, errors in error.error_dict.items():
+                    self.add_error(field if field in self.fields else None, errors)
+            else:
+                self.add_error(None, error)
+            return False
+        return True

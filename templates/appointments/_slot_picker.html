@@ -1,0 +1,42 @@
+{# Fills a form's time list with free slots. The form needs data-slot-picker, an appointment_date input,  #}
+{# an appointment_time select, and either a doctor select or data-doctor-id. Optional: data-selected-time, [data-slot-note]. #}
+<script>
+document.querySelectorAll('form[data-slot-picker]').forEach(function (form) {
+    const doctorSelect = form.querySelector('[name=doctor]');
+    const date = form.querySelector('[name=appointment_date]');
+    const time = form.querySelector('[name=appointment_time]');
+    const note = form.querySelector('[data-slot-note]');
+    let wanted = form.dataset.selectedTime;
+    const doctorId = () => (doctorSelect ? doctorSelect.value : form.dataset.doctorId);
+    const say = text => { if (note) note.textContent = text; };
+
+    function setOptions(placeholder, slots) {
+        time.replaceChildren(new Option(placeholder, ''));
+        slots.forEach(slot => time.add(new Option(slot, slot, false, slot === wanted)));
+        wanted = '';
+    }
+
+    async function loadSlots() {
+        if (!doctorId() || !date.value) {
+            setOptions(doctorSelect ? 'Pick a doctor and date first' : 'Pick a date first', []);
+            say('');
+            return;
+        }
+        setOptions('Loading free times...', []);
+        try {
+            const response = await fetch(`/api/doctors/${doctorId()}/slots/?date=${date.value}`);
+            if (!response.ok) throw new Error(response.status);
+            const data = await response.json();
+            setOptions(data.slots.length ? 'Choose a time' : 'No free times that day', data.slots);
+            say(`Appointments with this doctor last ${data.duration_minutes} minutes.`);
+        } catch (error) {
+            setOptions('Could not load times, try again', []);
+            say('');
+        }
+    }
+
+    if (doctorSelect) doctorSelect.addEventListener('change', loadSlots);
+    date.addEventListener('change', loadSlots);
+    loadSlots();
+});
+</script>
