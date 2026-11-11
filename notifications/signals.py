@@ -5,7 +5,8 @@ from django.db import transaction
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 
-from appointments.models import STATUS_CANCELED, STATUS_NO_SHOW, STATUS_SCHEDULED, Appointment
+from appointments.models import (STATUS_CANCELED, STATUS_DECLINED, STATUS_NO_SHOW, STATUS_PROPOSED, STATUS_SCHEDULED,
+                                 Appointment)
 
 from .models import Notification
 
@@ -50,8 +51,14 @@ def notify_on_appointment_change(sender, instance, created, **kwargs):
     previous = getattr(instance, '_previous_status', None)
     if previous == instance.status:
         return
-    if instance.status == STATUS_SCHEDULED:
+    if instance.status == STATUS_SCHEDULED and previous == STATUS_PROPOSED:
+        notify(instance.doctor, instance, f"{display_name(instance.patient)} accepted the new time, {when}.")
+    elif instance.status == STATUS_SCHEDULED:
         notify(instance.patient, instance, f"Dr. {display_name(instance.doctor)} confirmed your appointment on {when}.")
+    elif instance.status == STATUS_DECLINED:
+        notify(instance.patient, instance, f"Dr. {display_name(instance.doctor)} declined your request for {when}: {instance.cancellation_reason}")
+    elif instance.status == STATUS_PROPOSED:
+        notify(instance.patient, instance, f"Dr. {display_name(instance.doctor)} proposed a new time: {when}. Accept or decline it on your appointments page.")
     elif instance.status == STATUS_NO_SHOW:
         notify(instance.patient, instance, f"You were marked as missing your appointment with Dr. {display_name(instance.doctor)} on {when}.")
     elif instance.status == STATUS_CANCELED:

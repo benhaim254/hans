@@ -8,8 +8,8 @@ from django.views.decorators.http import require_POST
 from users.decorators import role_required
 from users.models import ROLE_DOCTOR, ROLE_PATIENT
 
-from .forms import AppointmentForm, AvailabilityForm, CancelAppointmentForm, TimeOffForm
-from .models import CANCELABLE_STATUSES, DOUBLE_BOOKED_MESSAGE, Appointment, TimeOff
+from .forms import AppointmentForm, AvailabilityForm, CancelAppointmentForm, NewTimeForm, TimeOffForm
+from .models import CANCELABLE_STATUSES, DOUBLE_BOOKED_MESSAGE, STATUS_PENDING, Appointment, TimeOff
 
 
 @role_required(ROLE_PATIENT)
@@ -135,6 +135,36 @@ def complete_appointment(request, appointment_id):
 @role_required(ROLE_DOCTOR)
 def no_show_appointment(request, appointment_id):
     return _doctor_transition(request, appointment_id, Appointment.mark_no_show, 'Appointment marked as a no-show.')
+
+
+@role_required(ROLE_DOCTOR)
+def respond_to_request(request, appointment_id):
+    """Doctor declines a pending request with a reason, or proposes a different free time."""
+    appointment = get_object_or_404(Appointment.objects.select_related('patient'), appointment_id=appointment_id,
+                                    doctor=request.user, status=STATUS_PENDING)
+    decline_form = CancelAppointmentForm(request.POST if request.POST.get('action') == 'decline' else None)
+    propose_form = NewTimeForm(request.POST if request.POST.get('action') == 'propose' else None)
+    if decline_form.is_valid():
+        appointment.decline(decline_form.cleaned_data['cancellation_reason'])
+        messages.success(request, 'Request declined. The patient has been told why.')
+        return redirect('doctor_dashboard')
+    if propose_form.is_valid() and propose_form.apply(appointment.propose):
+        messages.success(request, 'New time proposed. The patient can accept or decline it.')
+        return redirect('doctor_dashboard')
+    return render(request, 'appointments/respond.html', {
+        'appointment': appointment, 'decline_form': decline_form, 'propose_form': propose_form})
+
+
+@require_POST
+@role_required(ROLE_PATIENT)
+def accept_proposal(request, appointment_id):
+    appointment = get_object_or_404(Appointment, appointment_id=appointment_id, patient=request.user)
+    try:
+        appointment.accept_proposal()
+        messages.success(request, 'New time accepted. Your appointment is scheduled.')
+    except ValidationError as error:
+        messages.error(request, error.messages[0])
+    return redirect('patient_dashboard')
 
 
 @require_POST

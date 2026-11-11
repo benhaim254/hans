@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import IntegrityError, models, transaction
 from django.db.models import F, Q
 from django.utils import timezone
 
@@ -14,6 +14,8 @@ STATUS_SCHEDULED = 'scheduled'
 STATUS_COMPLETED = 'completed'
 STATUS_CANCELED = 'canceled'
 STATUS_NO_SHOW = 'no_show'
+STATUS_DECLINED = 'declined'
+STATUS_PROPOSED = 'proposed'
 
 STATUS_TYPES = [
     (STATUS_PENDING, 'Pending'),
@@ -21,9 +23,13 @@ STATUS_TYPES = [
     (STATUS_COMPLETED, 'Completed'),
     (STATUS_CANCELED, 'Canceled'),
     (STATUS_NO_SHOW, 'No-show'),
+    (STATUS_DECLINED, 'Declined'),
+    (STATUS_PROPOSED, 'New time proposed'),
 ]
 
-CANCELABLE_STATUSES = (STATUS_PENDING, STATUS_SCHEDULED)
+CANCELABLE_STATUSES = (STATUS_PENDING, STATUS_SCHEDULED, STATUS_PROPOSED)
+# Appointments in these statuses no longer hold their time slot.
+INACTIVE_STATUSES = (STATUS_CANCELED, STATUS_DECLINED)
 
 DOUBLE_BOOKED_MESSAGE = 'This doctor is already booked at that date and time.'
 
@@ -86,7 +92,7 @@ def _busy_ranges(doctor_id, day, exclude_pk=None):
     """(start, end) times already taken by the doctor's active appointments on that day."""
     taken = (Appointment.objects
              .filter(doctor_id=doctor_id, appointment_date=day)
-             .exclude(status=STATUS_CANCELED)
+             .exclude(status__in=INACTIVE_STATUSES)
              .exclude(pk=exclude_pk)
              .values_list('appointment_time', 'duration_minutes'))
     return [(start, _add_minutes(start, minutes)) for start, minutes in taken]
@@ -151,7 +157,7 @@ class Appointment(models.Model):
             # Database backstop: SQLite can't reject overlapping ranges, but it can reject identical starts.
             models.UniqueConstraint(
                 fields=['doctor', 'appointment_date', 'appointment_time'],
-                condition=~Q(status=STATUS_CANCELED),
+                condition=~Q(status__in=INACTIVE_STATUSES),
                 name='unique_active_doctor_slot',
             ),
         ]
@@ -184,21 +190,65 @@ class Appointment(models.Model):
         self._take_doctor_length()
 
         if self._state.adding:
-            if self.appointment_date < timezone.localdate():
-                raise ValidationError({'appointment_date': 'Appointments cannot be booked in the past.'})
-            if on_leave(self.doctor_id, self.appointment_date):
-                raise ValidationError({'appointment_date': 'The doctor is on leave that day.'})
-            hours = self.doctor.working_hours.filter(weekday=self.appointment_date.weekday()).first()
-            if hours is None:
-                raise ValidationError({'appointment_date': "The doctor doesn't work on that day."})
-            if self.appointment_time < hours.start_time or self.end_time > hours.end_time:
-                raise ValidationError({'appointment_time': (
-                    f"A {self.duration_minutes}-minute appointment must fit between "
-                    f"{hours.start_time:%H:%M} and {hours.end_time:%H:%M}.")})
+            self._check_new_time()
+        self._check_free()
 
+    def _check_new_time(self):
+        """Rules for any newly chosen time: future, not on leave, a working day, inside the hours."""
+        if self.appointment_date < timezone.localdate():
+            raise ValidationError({'appointment_date': 'Appointments cannot be booked in the past.'})
+        if self.has_started:
+            raise ValidationError({'appointment_time': 'That time has already passed.'})
+        if on_leave(self.doctor_id, self.appointment_date):
+            raise ValidationError({'appointment_date': 'The doctor is on leave that day.'})
+        hours = self.doctor.working_hours.filter(weekday=self.appointment_date.weekday()).first()
+        if hours is None:
+            raise ValidationError({'appointment_date': "The doctor doesn't work on that day."})
+        if self.appointment_time < hours.start_time or self.end_time > hours.end_time:
+            raise ValidationError({'appointment_time': (
+                f"A {self.duration_minutes}-minute appointment must fit between "
+                f"{hours.start_time:%H:%M} and {hours.end_time:%H:%M}.")})
+
+    def _check_free(self):
         busy = _busy_ranges(self.doctor_id, self.appointment_date, exclude_pk=self.pk)
         if _overlaps(self.appointment_time, self.end_time, busy):
             raise ValidationError(DOUBLE_BOOKED_MESSAGE)
+
+    def _move_to(self, day, at, status):
+        """Move to a new time after checking every booking rule; the old time is freed."""
+        old = (self.appointment_date, self.appointment_time)
+        self.appointment_date, self.appointment_time = day, at
+        old_status = self.status
+        try:
+            self._check_new_time()
+            self._check_free()
+            self.status = status
+            with transaction.atomic():
+                self.save(update_fields=['appointment_date', 'appointment_time', 'status', 'last_updated'])
+        except (ValidationError, IntegrityError) as error:
+            self.appointment_date, self.appointment_time = old
+            self.status = old_status
+            if isinstance(error, IntegrityError):  # someone took the slot between the check and the save
+                raise ValidationError(DOUBLE_BOOKED_MESSAGE)
+            raise
+
+    def decline(self, reason):
+        if self.status != STATUS_PENDING:
+            raise ValidationError('Only pending requests can be declined.')
+        self.status = STATUS_DECLINED
+        self.cancellation_reason = reason
+        self.save(update_fields=['status', 'cancellation_reason', 'last_updated'])
+
+    def propose(self, day, at):
+        if self.status != STATUS_PENDING:
+            raise ValidationError('You can only propose a new time for a pending request.')
+        self._move_to(day, at, STATUS_PROPOSED)
+
+    def accept_proposal(self):
+        if self.status != STATUS_PROPOSED:
+            raise ValidationError('There is no proposed time to accept.')
+        self.status = STATUS_SCHEDULED
+        self.save(update_fields=['status', 'last_updated'])
 
     def confirm(self):
         if self.status != STATUS_PENDING:
@@ -222,7 +272,7 @@ class Appointment(models.Model):
 
     def cancel(self, reason):
         if self.status not in CANCELABLE_STATUSES:
-            raise ValidationError('Only pending or scheduled appointments can be canceled.')
+            raise ValidationError('Only upcoming appointments can be canceled.')
         self.status = STATUS_CANCELED
         self.cancellation_reason = reason
         self.save(update_fields=['status', 'cancellation_reason', 'last_updated'])
