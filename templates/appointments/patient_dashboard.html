@@ -7,10 +7,10 @@
         <div class="card">
             <div class="card-body">
                 <h2 class="h5 mb-3"><i class="bi bi-calendar-plus me-1" aria-hidden="true"></i>Book an appointment</h2>
-                <form method="POST" id="booking-form" data-selected-time="{{ form.appointment_time.value|default_if_none:''|slice:':5' }}">
+                <form method="POST" id="booking-form" data-slot-picker data-selected-time="{{ form.appointment_time.value|default_if_none:''|slice:':5' }}">
                     {% csrf_token %}
                     {{ form.as_div }}
-                    <p class="small text-secondary" id="slot-note" aria-live="polite"></p>
+                    <p class="small text-secondary" data-slot-note aria-live="polite"></p>
                     <button type="submit" class="btn btn-primary w-100">Book appointment</button>
                 </form>
             </div>
@@ -33,9 +33,24 @@
                     </div>
                     {% if appointment.reason %}<p class="mb-0 mt-2">{{ appointment.reason }}</p>{% endif %}
                     {% if appointment.cancellation_reason %}
-                        <p class="mb-0 mt-2 small text-danger">Canceled: {{ appointment.cancellation_reason }}</p>
+                        <p class="mb-0 mt-2 small text-danger">{{ appointment.get_status_display }}: {{ appointment.cancellation_reason }}</p>
                     {% endif %}
-                    {% if appointment.status == 'pending' or appointment.status == 'scheduled' %}
+                    {% if appointment.status == 'proposed' %}
+                        <div class="alert alert-info small mt-3 mb-0 py-2">
+                            Dr. {{ appointment.doctor.get_full_name|default:appointment.doctor.username }} proposed this new time.
+                            <div class="d-flex gap-2 mt-2">
+                                <form method="POST" action="{% url 'accept_proposal' appointment.appointment_id %}" class="m-0">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-primary">Accept new time</button>
+                                </form>
+                                <form method="POST" action="{% url 'cancel_appointment' appointment.appointment_id %}" class="m-0">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="cancellation_reason" value="The proposed time doesn't work for me.">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Decline</button>
+                                </form>
+                            </div>
+                        </div>
+                    {% elif appointment.status == 'pending' or appointment.status == 'scheduled' %}
                         <form method="POST" action="{% url 'cancel_appointment' appointment.appointment_id %}" class="mt-3">
                             {% csrf_token %}
                             <div class="input-group input-group-sm m-0">
@@ -57,44 +72,5 @@
         {% endfor %}
     </div>
 </div>
-<script>
-// Fill the time list with the doctor's free slots whenever the doctor or date changes.
-(function () {
-    const form = document.getElementById('booking-form');
-    const doctor = form.querySelector('[name=doctor]');
-    const date = form.querySelector('[name=appointment_date]');
-    const time = form.querySelector('[name=appointment_time]');
-    const note = document.getElementById('slot-note');
-    let wanted = form.dataset.selectedTime;
-
-    function setOptions(placeholder, slots) {
-        time.replaceChildren(new Option(placeholder, ''));
-        slots.forEach(slot => time.add(new Option(slot, slot, false, slot === wanted)));
-        wanted = '';
-    }
-
-    async function loadSlots() {
-        if (!doctor.value || !date.value) {
-            setOptions('Pick a doctor and date first', []);
-            note.textContent = '';
-            return;
-        }
-        setOptions('Loading free times...', []);
-        try {
-            const response = await fetch(`/api/doctors/${doctor.value}/slots/?date=${date.value}`);
-            if (!response.ok) throw new Error(response.status);
-            const data = await response.json();
-            setOptions(data.slots.length ? 'Choose a time' : 'No free times that day', data.slots);
-            note.textContent = `Appointments with this doctor last ${data.duration_minutes} minutes.`;
-        } catch (error) {
-            setOptions('Could not load times, try again', []);
-            note.textContent = '';
-        }
-    }
-
-    doctor.addEventListener('change', loadSlots);
-    date.addEventListener('change', loadSlots);
-    loadSlots();
-})();
-</script>
+{% include "appointments/_slot_picker.html" %}
 {% endblock %}
