@@ -16,7 +16,7 @@ Patients can:
 
 Doctors can:
 - register, log in and fill in a profile (department, specialization, license number)
-- set their working hours and appointment length
+- set their working hours and appointment length, and block out days for leave
 - see each patient's date of birth, blood group, allergies and emergency contact on their appointments, and only for their own patients
 - see their schedule grouped into Today, Upcoming and Past, confirm pending appointments, and mark past ones as completed or a no-show
 - get notified when a patient books or cancels

@@ -2,11 +2,12 @@ from datetime import time
 
 from django import forms
 from django.db import transaction
+from django.utils import timezone
 
 from hans.forms import BootstrapFormMixin
 from users.models import APPOINTMENT_LENGTH_CHOICES, User
 
-from .models import WEEKDAYS, Appointment, WorkingHours
+from .models import WEEKDAYS, Appointment, TimeOff, WorkingHours
 
 
 class AppointmentForm(BootstrapFormMixin, forms.ModelForm):
@@ -90,3 +91,23 @@ class AvailabilityForm(forms.Form):
                               'end_time': self.cleaned_data[f'end_{day}']})
             else:
                 WorkingHours.objects.filter(doctor=self.doctor, weekday=day).delete()
+
+
+class TimeOffForm(forms.ModelForm):
+    class Meta:
+        model = TimeOff
+        fields = ['start_date', 'end_date', 'reason']
+        widgets = {
+            'start_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
+            'end_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
+            'reason': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Annual leave'}),
+        }
+
+    def clean(self):
+        cleaned = super().clean()
+        start, end = cleaned.get('start_date'), cleaned.get('end_date')
+        if start and start < timezone.localdate():
+            self.add_error('start_date', 'Time off cannot start in the past.')
+        if start and end and end < start:
+            self.add_error('end_date', 'The last day cannot be before the first day.')
+        return cleaned

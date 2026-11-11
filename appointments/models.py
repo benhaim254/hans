@@ -55,6 +55,29 @@ class WorkingHours(models.Model):
         return f"{self.doctor.username}: {self.get_weekday_display()} {self.start_time:%H:%M} to {self.end_time:%H:%M}"
 
 
+class TimeOff(models.Model):
+    """Dates a doctor is away (leave, conferences). No bookings on these days."""
+    doctor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                               related_name='time_off', limit_choices_to={'role': ROLE_DOCTOR})
+    start_date = models.DateField()
+    end_date = models.DateField()
+    reason = models.CharField(max_length=100, blank=True)
+
+    class Meta:
+        ordering = ['start_date']
+        verbose_name_plural = 'time off'
+        constraints = [
+            models.CheckConstraint(condition=Q(end_date__gte=F('start_date')), name='time_off_end_not_before_start'),
+        ]
+
+    def __str__(self):
+        return f"{self.doctor.username}: {self.start_date} to {self.end_date}"
+
+
+def on_leave(doctor_id, day):
+    return TimeOff.objects.filter(doctor_id=doctor_id, start_date__lte=day, end_date__gte=day).exists()
+
+
 def _add_minutes(at, minutes):
     return (datetime.combine(datetime.min, at) + timedelta(minutes=minutes)).time()
 
@@ -77,7 +100,7 @@ def available_slots(doctor, day):
     """Start times on a 15-minute grid where a full appointment fits and nothing overlaps."""
     hours = doctor.working_hours.filter(weekday=day.weekday()).first()
     today = timezone.localdate()
-    if hours is None or day < today:
+    if hours is None or day < today or on_leave(doctor.pk, day):
         return []
     length = doctor.doctorprofile.appointment_length
     busy = _busy_ranges(doctor.pk, day)
@@ -163,6 +186,8 @@ class Appointment(models.Model):
         if self._state.adding:
             if self.appointment_date < timezone.localdate():
                 raise ValidationError({'appointment_date': 'Appointments cannot be booked in the past.'})
+            if on_leave(self.doctor_id, self.appointment_date):
+                raise ValidationError({'appointment_date': 'The doctor is on leave that day.'})
             hours = self.doctor.working_hours.filter(weekday=self.appointment_date.weekday()).first()
             if hours is None:
                 raise ValidationError({'appointment_date': "The doctor doesn't work on that day."})

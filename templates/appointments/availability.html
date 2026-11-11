@@ -41,6 +41,48 @@
                 </form>
             </div>
         </div>
+
+        <div class="card mt-4">
+            <div class="card-body p-4">
+                <h2 class="h5 mb-1">Time off</h2>
+                <p class="text-secondary mb-3">Patients can't book you on these days. Existing appointments stay as they are.</p>
+                {% if time_off %}
+                    <ul class="list-group mb-3">
+                        {% for item in time_off %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <span>
+                                    {{ item.start_date|date:"D j M Y" }}{% if item.end_date != item.start_date %} to {{ item.end_date|date:"D j M Y" }}{% endif %}
+                                    {% if item.reason %}<span class="text-secondary">· {{ item.reason }}</span>{% endif %}
+                                </span>
+                                <form method="POST" action="{% url 'delete_time_off' item.pk %}" class="m-0">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
+                                </form>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+                <form method="POST" action="{% url 'add_time_off' %}" class="row g-2 align-items-end">
+                    {% csrf_token %}
+                    {{ time_off_form.non_field_errors }}
+                    <div class="col-sm-3 m-0">
+                        <label for="{{ time_off_form.start_date.id_for_label }}">First day</label>
+                        {{ time_off_form.start_date.errors }}{{ time_off_form.start_date }}
+                    </div>
+                    <div class="col-sm-3 m-0">
+                        <label for="{{ time_off_form.end_date.id_for_label }}">Last day</label>
+                        {{ time_off_form.end_date.errors }}{{ time_off_form.end_date }}
+                    </div>
+                    <div class="col-sm-4 m-0">
+                        <label for="{{ time_off_form.reason.id_for_label }}">Reason (optional)</label>
+                        {{ time_off_form.reason.errors }}{{ time_off_form.reason }}
+                    </div>
+                    <div class="col-sm-2 m-0">
+                        <button type="submit" class="btn btn-outline-primary w-100">Add</button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
