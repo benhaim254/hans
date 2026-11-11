@@ -21,7 +21,7 @@ def patient_dashboard(request):
             try:
                 with transaction.atomic():
                     form.save()
-            except IntegrityError:  # someone took the same slot between our check and the insert
+            except (ValidationError, IntegrityError):  # someone took the slot after our form check ran
                 form.add_error(None, DOUBLE_BOOKED_MESSAGE)
             else:
                 messages.success(request, 'Appointment requested. The doctor will confirm it shortly.')

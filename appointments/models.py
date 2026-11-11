@@ -1,4 +1,5 @@
 from datetime import datetime, time, timedelta
+from functools import wraps
 from uuid import uuid4
 
 from django.conf import settings
@@ -82,6 +83,28 @@ class TimeOff(models.Model):
 
 def on_leave(doctor_id, day):
     return TimeOff.objects.filter(doctor_id=doctor_id, start_date__lte=day, end_date__gte=day).exists()
+
+
+def lock_doctor_schedule(doctor_id):
+    """
+    Serialise schedule changes for one doctor, so check-then-save can't interleave.
+    On Postgres this locks the doctor's row. SQLite ignores select_for_update, but the
+    IMMEDIATE transaction mode in settings takes the database write lock when the
+    transaction begins, which serialises the same way. Must run inside transaction.atomic().
+    """
+    from django.contrib.auth import get_user_model
+    list(get_user_model().objects.select_for_update().filter(pk=doctor_id).values_list('pk', flat=True))
+
+
+def _locked_transition(method):
+    """Run a status change on the latest saved state, under a row lock, so two people can't both win."""
+    @wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with transaction.atomic():
+            list(Appointment.objects.select_for_update().filter(pk=self.pk).values_list('pk', flat=True))
+            self.refresh_from_db(fields=['status', 'appointment_date', 'appointment_time', 'cancellation_reason'])
+            return method(self, *args, **kwargs)
+    return wrapper
 
 
 def _minute_of_day(at):
@@ -187,7 +210,14 @@ class Appointment(models.Model):
 
     def save(self, *args, **kwargs):
         self._take_doctor_length()
-        super().save(*args, **kwargs)
+        if not self._state.adding or self.status in INACTIVE_STATUSES:
+            return super().save(*args, **kwargs)
+        # A new booking: re-check for overlaps under the doctor's lock, so a booking saved a moment
+        # ago by someone else (after our clean() ran) is seen before we insert.
+        with transaction.atomic():
+            lock_doctor_schedule(self.doctor_id)
+            self._check_free()
+            super().save(*args, **kwargs)
 
     def clean(self):
         """Booking rules shared by the HTML form and the API serializer."""
@@ -228,10 +258,11 @@ class Appointment(models.Model):
         self.appointment_date, self.appointment_time = day, at
         old_status = self.status
         try:
-            self._check_new_time()
-            self._check_free()
-            self.status = status
             with transaction.atomic():
+                lock_doctor_schedule(self.doctor_id)
+                self._check_new_time()
+                self._check_free()
+                self.status = status
                 self.save(update_fields=['appointment_date', 'appointment_time', 'status', 'last_updated'])
         except (ValidationError, IntegrityError) as error:
             self.appointment_date, self.appointment_time = old
@@ -240,6 +271,7 @@ class Appointment(models.Model):
                 raise ValidationError(DOUBLE_BOOKED_MESSAGE)
             raise
 
+    @_locked_transition
     def decline(self, reason):
         if self.status != STATUS_PENDING:
             raise ValidationError('Only pending requests can be declined.')
@@ -247,17 +279,20 @@ class Appointment(models.Model):
         self.cancellation_reason = reason
         self.save(update_fields=['status', 'cancellation_reason', 'last_updated'])
 
+    @_locked_transition
     def propose(self, day, at):
         if self.status != STATUS_PENDING:
             raise ValidationError('You can only propose a new time for a pending request.')
         self._move_to(day, at, STATUS_PROPOSED)
 
+    @_locked_transition
     def reschedule(self, day, at):
         """Patient moves their own appointment; the doctor has to confirm the new time."""
         if self.status not in CANCELABLE_STATUSES:
             raise ValidationError('Only upcoming appointments can be rescheduled.')
         self._move_to(day, at, STATUS_PENDING)
 
+    @_locked_transition
     def accept_proposal(self):
         if self.status != STATUS_PROPOSED:
             raise ValidationError('There is no proposed time to accept.')
@@ -266,6 +301,7 @@ class Appointment(models.Model):
         self.status = STATUS_SCHEDULED
         self.save(update_fields=['status', 'last_updated'])
 
+    @_locked_transition
     def confirm(self):
         if self.status != STATUS_PENDING:
             raise ValidationError('Only pending appointments can be confirmed.')
@@ -274,6 +310,7 @@ class Appointment(models.Model):
         self.status = STATUS_SCHEDULED
         self.save(update_fields=['status', 'last_updated'])
 
+    @_locked_transition
     def _finish(self, status):
         if self.status != STATUS_SCHEDULED:
             raise ValidationError('Only scheduled appointments can be closed.')
@@ -288,6 +325,7 @@ class Appointment(models.Model):
     def mark_no_show(self):
         self._finish(STATUS_NO_SHOW)
 
+    @_locked_transition
     def cancel(self, reason):
         if self.status not in CANCELABLE_STATUSES:
             raise ValidationError('Only upcoming appointments can be canceled.')

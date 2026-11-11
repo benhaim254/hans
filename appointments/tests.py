@@ -1,11 +1,13 @@
 from datetime import datetime, time, timedelta
+import threading
 from io import StringIO
 from unittest import mock
 
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.db import IntegrityError
-from django.test import TestCase
+from django.db import connection
+from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -49,8 +51,10 @@ class AppointmentTestCase(TestCase):
 class DoubleBookingTests(AppointmentTestCase):
     def test_database_blocks_same_doctor_slot(self):
         self.book()
+        # bulk_create skips save()'s overlap check, so this hits the database constraint itself.
         with self.assertRaises(IntegrityError):
-            self.book(patient=self.other_patient)
+            Appointment.objects.bulk_create([Appointment(
+                patient=self.other_patient, doctor=self.doctor, appointment_date=TOMORROW, appointment_time=time(9, 0))])
 
     def test_canceled_appointment_frees_slot(self):
         self.book(status=STATUS_CANCELED)
@@ -724,3 +728,75 @@ class ReviewFixTests(AppointmentTestCase):
             appointment.reschedule(TOMORROW, time(11, 0))
         appointment.refresh_from_db()
         self.assertEqual(appointment.appointment_time, time(9, 0))
+
+
+class StaleCopyTests(AppointmentTestCase):
+    """Two people working from copies loaded before the other one saved."""
+
+    def test_overlapping_booking_saved_after_our_check_is_refused(self):
+        set_hours(self.doctor, length=60)
+        mine = Appointment(patient=self.patient, doctor=self.doctor, appointment_date=TOMORROW, appointment_time=time(10, 15))
+        mine.full_clean(exclude=['patient'])  # passes: the slot looks free
+        self.book(patient=self.other_patient, appointment_time=time(10, 0))  # someone else saves 10:00 to 11:00
+        with self.assertRaisesMessage(ValidationError, 'already booked'):
+            mine.save()
+        self.assertEqual(Appointment.objects.count(), 1)
+
+    def test_confirm_on_a_copy_loaded_before_the_patient_cancelled(self):
+        patients_copy = self.book()
+        doctors_copy = Appointment.objects.get(pk=patients_copy.pk)
+        patients_copy.cancel('Feeling better')
+        with self.assertRaisesMessage(ValidationError, 'Only pending appointments can be confirmed'):
+            doctors_copy.confirm()
+        patients_copy.refresh_from_db()
+        self.assertEqual(patients_copy.status, STATUS_CANCELED)
+
+    def test_two_reschedules_from_stale_copies(self):
+        first = self.book(status=STATUS_SCHEDULED)
+        second = Appointment.objects.get(pk=first.pk)
+        first.cancel('Changed plans')
+        with self.assertRaisesMessage(ValidationError, 'Only upcoming appointments'):
+            second.reschedule(TOMORROW, time(15, 0))
+
+
+class ConcurrentBookingTests(TransactionTestCase):
+    """Real threads with their own database connections, booking overlapping times at the same moment."""
+
+    def test_overlapping_bookings_at_the_same_moment_only_one_wins(self):
+        from users.tests import make_verified_doctor
+        doctor = make_verified_doctor('doc')
+        set_hours(doctor, length=60)
+        patients = [User.objects.create_user(f'pat{i}', password='x') for i in range(2)]
+        both_checked = threading.Barrier(2, timeout=10)
+        real_check = Appointment._check_free
+        results = []
+
+        seen = threading.local()
+
+        def slow_check(appointment):
+            real_check(appointment)
+            if not getattr(seen, 'done', False):  # first check, in clean(): wait until both saw the slot free
+                seen.done = True
+                both_checked.wait()
+
+        def book(patient, at):
+            try:
+                appointment = Appointment(patient=patient, doctor=doctor, appointment_date=TOMORROW, appointment_time=at)
+                appointment.full_clean(exclude=['patient'])
+                appointment.save()
+                results.append('saved')
+            except ValidationError as error:
+                results.append(error.messages[0])
+            finally:
+                connection.close()
+
+        with mock.patch.object(Appointment, '_check_free', slow_check):
+            threads = [threading.Thread(target=book, args=(patients[0], time(10, 0))),
+                       threading.Thread(target=book, args=(patients[1], time(10, 15)))]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=30)
+
+        self.assertEqual(sorted(results), ['This doctor is already booked at that date and time.', 'saved'])
+        self.assertEqual(Appointment.objects.count(), 1)
