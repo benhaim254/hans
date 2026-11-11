@@ -1,4 +1,5 @@
 from datetime import time, timedelta
+from unittest import mock
 
 from django.core import mail
 from django.test import TestCase
@@ -47,3 +48,18 @@ class AppointmentNotificationTests(TestCase):
         response = self.client.get(reverse('notifications:list'))
         self.assertContains(response, 'awaiting confirmation')
         self.assertFalse(Notification.objects.filter(user=self.patient, is_read=False).exists())
+
+
+    def test_failed_email_does_not_break_booking(self):
+        with mock.patch('notifications.signals.send_mail', side_effect=OSError('mail server down')), \
+                self.assertLogs('notifications.signals', level='ERROR'):
+            self.book()
+        self.assertEqual(Notification.objects.count(), 2)
+
+    def test_unread_count_in_navbar(self):
+        self.book()
+        self.client.force_login(self.patient)
+        response = self.client.get(reverse('users:profile_edit'))
+        self.assertEqual(response.context['unread_notifications'], 1)
+        self.client.get(reverse('notifications:list'))
+        self.assertEqual(self.client.get(reverse('users:profile_edit')).context['unread_notifications'], 0)

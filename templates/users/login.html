@@ -15,6 +15,7 @@
                 {% endif %}
                 <form method="POST">
                     {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ next }}">
                     <div>
                         <label for="id_username">Username</label>
                         <input type="text" name="username" id="id_username" class="form-control" autocomplete="username" required autofocus>

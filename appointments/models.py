@@ -25,6 +25,8 @@ STATUS_TYPES = [
 
 CANCELABLE_STATUSES = (STATUS_PENDING, STATUS_SCHEDULED)
 
+DOUBLE_BOOKED_MESSAGE = 'This doctor is already booked at that date and time.'
+
 WEEKDAYS = [
     (0, 'Monday'), (1, 'Tuesday'), (2, 'Wednesday'), (3, 'Thursday'),
     (4, 'Friday'), (5, 'Saturday'), (6, 'Sunday'),
@@ -171,7 +173,7 @@ class Appointment(models.Model):
 
         busy = _busy_ranges(self.doctor_id, self.appointment_date, exclude_pk=self.pk)
         if _overlaps(self.appointment_time, self.end_time, busy):
-            raise ValidationError('This doctor is already booked at that date and time.')
+            raise ValidationError(DOUBLE_BOOKED_MESSAGE)
 
     def confirm(self):
         if self.status != STATUS_PENDING:

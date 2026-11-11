@@ -126,6 +126,19 @@ class WebAuthTests(TestCase):
         response = self.client.post(reverse('users:login'), {'username': 'doc', 'password': STRONG_PASSWORD})
         self.assertRedirects(response, reverse('doctor_dashboard'))
 
+    def test_login_returns_to_requested_page(self):
+        User.objects.create_user('pat', password=STRONG_PASSWORD)
+        page = reverse('notifications:list')
+        self.assertContains(self.client.get(reverse('users:login'), {'next': page}), f'value="{page}"')
+        response = self.client.post(reverse('users:login'), {'username': 'pat', 'password': STRONG_PASSWORD, 'next': page})
+        self.assertRedirects(response, page)
+
+    def test_login_ignores_outside_next(self):
+        User.objects.create_user('pat', password=STRONG_PASSWORD)
+        response = self.client.post(reverse('users:login'), {
+            'username': 'pat', 'password': STRONG_PASSWORD, 'next': 'https://evil.example.com/'})
+        self.assertRedirects(response, reverse('patient_dashboard'))
+
     def test_logout_requires_post(self):
         user = User.objects.create_user('pat', password=STRONG_PASSWORD)
         self.client.force_login(user)

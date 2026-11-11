@@ -1,3 +1,5 @@
+import logging
+
 from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models.signals import post_save, pre_save
@@ -6,6 +8,8 @@ from django.dispatch import receiver
 from appointments.models import STATUS_CANCELED, STATUS_NO_SHOW, STATUS_SCHEDULED, Appointment
 
 from .models import Notification
+
+logger = logging.getLogger(__name__)
 
 
 def display_name(user):
@@ -16,7 +20,15 @@ def notify(user, appointment, message):
     Notification.objects.create(user=user, appointment=appointment, message=message)
     if user.email:
         # Send after commit so a rolled-back booking never emails anyone.
-        transaction.on_commit(lambda: send_mail('HANS appointment update', message, None, [user.email]))
+        transaction.on_commit(lambda: send_email(user.email, message))
+
+
+def send_email(address, message):
+    # The notification row is already saved; a mail server outage must not turn the request into an error.
+    try:
+        send_mail('HANS appointment update', message, None, [address])
+    except Exception:
+        logger.exception('Could not email %s', address)
 
 
 @receiver(pre_save, sender=Appointment)
