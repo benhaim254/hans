@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Reschedule{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+        <a href="{% url 'patient_dashboard' %}" class="d-inline-block mb-3"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i>Back to my appointments</a>
+        <div class="card">
+            <div class="card-body p-4">
+                <h1 class="h5 mb-1">Reschedule with Dr. {{ appointment.doctor.get_full_name|default:appointment.doctor.username }}</h1>
+                <p class="text-secondary">
+                    Currently {{ appointment.appointment_date|date:"D j M Y" }} at {{ appointment.appointment_time|time:"H:i" }}.
+                    The doctor will need to confirm the new time.
+                </p>
+                <form method="POST" data-slot-picker data-doctor-id="{{ appointment.doctor_id }}"
+                      data-selected-time="{{ form.appointment_time.value|default_if_none:''|slice:':5' }}">
+                    {% csrf_token %}
+                    {{ form.as_div }}
+                    <p class="small text-secondary" data-slot-note aria-live="polite"></p>
+                    <button type="submit" class="btn btn-primary">Move appointment</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% include "appointments/_slot_picker.html" %}
+{% endblock %}

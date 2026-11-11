@@ -5,7 +5,8 @@ from django.db import transaction
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 
-from appointments.models import (STATUS_CANCELED, STATUS_DECLINED, STATUS_NO_SHOW, STATUS_PROPOSED, STATUS_SCHEDULED,
+from appointments.models import (STATUS_CANCELED, STATUS_DECLINED, STATUS_NO_SHOW, STATUS_PENDING, STATUS_PROPOSED,
+                                 STATUS_SCHEDULED,
                                  Appointment)
 
 from .models import Notification
@@ -33,11 +34,11 @@ def send_email(address, message):
 
 
 @receiver(pre_save, sender=Appointment)
-def remember_previous_status(sender, instance, **kwargs):
-    instance._previous_status = (
-        Appointment.objects.filter(pk=instance.pk).values_list('status', flat=True).first()
-        if instance.pk else None
-    )
+def remember_previous_state(sender, instance, **kwargs):
+    previous = (Appointment.objects.filter(pk=instance.pk)
+                .values_list('status', 'appointment_date', 'appointment_time').first()
+                if instance.pk else None)
+    instance._previous_status, *instance._previous_time = previous or (None, None, None)
 
 
 @receiver(post_save, sender=Appointment)
@@ -49,6 +50,10 @@ def notify_on_appointment_change(sender, instance, created, **kwargs):
         return
 
     previous = getattr(instance, '_previous_status', None)
+    moved = getattr(instance, '_previous_time', None) != [instance.appointment_date, instance.appointment_time]
+    if instance.status == STATUS_PENDING and moved:
+        notify(instance.doctor, instance, f"{display_name(instance.patient)} moved their appointment to {when}. Please confirm the new time.")
+        return
     if previous == instance.status:
         return
     if instance.status == STATUS_SCHEDULED and previous == STATUS_PROPOSED:

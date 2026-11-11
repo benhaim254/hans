@@ -155,6 +155,17 @@ def respond_to_request(request, appointment_id):
         'appointment': appointment, 'decline_form': decline_form, 'propose_form': propose_form})
 
 
+@role_required(ROLE_PATIENT)
+def reschedule_appointment(request, appointment_id):
+    appointment = get_object_or_404(Appointment.objects.select_related('doctor'), appointment_id=appointment_id,
+                                    patient=request.user, status__in=CANCELABLE_STATUSES)
+    form = NewTimeForm(request.POST or None)
+    if form.is_valid() and form.apply(appointment.reschedule):
+        messages.success(request, 'Appointment moved. The doctor will confirm the new time.')
+        return redirect('patient_dashboard')
+    return render(request, 'appointments/reschedule.html', {'appointment': appointment, 'form': form})
+
+
 @require_POST
 @role_required(ROLE_PATIENT)
 def accept_proposal(request, appointment_id):
