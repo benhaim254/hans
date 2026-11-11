@@ -14,11 +14,11 @@ document.querySelectorAll('form[data-slot-picker]').forEach(function (form) {
     function setOptions(placeholder, slots) {
         time.replaceChildren(new Option(placeholder, ''));
         slots.forEach(slot => time.add(new Option(slot, slot, false, slot === wanted)));
-        if (slots.length) wanted = '';
     }
 
     async function loadSlots() {
         if (!doctorId() || !date.value) {
+            ++latest;  // drop any response still on its way
             setOptions(doctorSelect ? 'Pick a doctor and date first' : 'Pick a date first', []);
             say('');
             return;
@@ -31,6 +31,7 @@ document.querySelectorAll('form[data-slot-picker]').forEach(function (form) {
             const data = await response.json();
             if (request !== latest) return;  // a newer doctor or date was picked meanwhile
             setOptions(data.slots.length ? 'Choose a time' : 'No free times that day', data.slots);
+            wanted = '';  // restore the earlier pick once only, whether or not it was still free
             say(`Appointments with this doctor last ${data.duration_minutes} minutes.`);
         } catch (error) {
             if (request !== latest) return;

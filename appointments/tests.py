@@ -800,3 +800,99 @@ class ConcurrentBookingTests(TransactionTestCase):
 
         self.assertEqual(sorted(results), ['This doctor is already booked at that date and time.', 'saved'])
         self.assertEqual(Appointment.objects.count(), 1)
+
+
+class SecondReviewTests(AppointmentTestCase):
+    """Regression tests for the second code review."""
+
+    def test_decline_after_patient_cancelled_shows_message_not_error(self):
+        appointment = self.book()
+        real_decline = Appointment.decline
+
+        def cancelled_meanwhile(stale_copy, reason):  # the patient cancels after the doctor's page loaded
+            Appointment.objects.get(pk=stale_copy.pk).cancel('Feeling better')
+            return real_decline(stale_copy, reason)
+
+        self.client.force_login(self.doctor)
+        with mock.patch.object(Appointment, 'decline', cancelled_meanwhile):
+            response = self.client.post(reverse('respond_to_request', args=[appointment.appointment_id]),
+                                        {'action': 'decline', 'cancellation_reason': 'Away'}, follow=True)
+        self.assertContains(response, 'Only pending requests can be declined')
+        appointment.refresh_from_db()
+        self.assertEqual(appointment.status, STATUS_CANCELED)
+
+    def test_leave_added_after_the_booking_check_is_caught_at_save(self):
+        mine = Appointment(patient=self.patient, doctor=self.doctor, appointment_date=TOMORROW, appointment_time=time(10, 0))
+        mine.full_clean(exclude=['patient'])  # passes: no leave yet
+        TimeOff.objects.create(doctor=self.doctor, start_date=TOMORROW, end_date=TOMORROW)
+        with self.assertRaisesMessage(ValidationError, 'on leave'):
+            mine.save()
+        self.assertFalse(Appointment.objects.exists())
+
+    def test_web_booking_shows_the_real_reason_when_save_refuses(self):
+        self.client.force_login(self.patient)
+        real_clean = Appointment.clean
+
+        def leave_added_meanwhile(appointment):
+            real_clean(appointment)
+            TimeOff.objects.get_or_create(doctor=self.doctor, start_date=TOMORROW, end_date=TOMORROW)
+
+        with mock.patch.object(Appointment, 'clean', leave_added_meanwhile):
+            response = self.client.post(reverse('patient_dashboard'), {
+                'doctor': self.doctor.pk, 'appointment_date': TOMORROW, 'appointment_time': '10:00'})
+        self.assertContains(response, 'on leave that day')
+        self.assertNotContains(response, 'already booked')
+
+    def test_seed_demo_survives_rebooked_and_overlapping_slots(self):
+        call_command('seed_demo', stdout=StringIO())
+        first, second = Appointment.objects.filter(status=STATUS_PENDING).order_by('pk')[:2]
+        first.cancel('Changed plans')  # a cancelled and an active booking now share one slot
+        Appointment.objects.create(patient=first.patient, doctor=first.doctor,
+                                   appointment_date=first.appointment_date, appointment_time=first.appointment_time)
+        second.delete()  # and a real booking overlaps where a seeded one used to be
+        Appointment.objects.create(patient=second.patient, doctor=second.doctor, appointment_date=second.appointment_date,
+                                   appointment_time=(datetime.combine(TOMORROW, second.appointment_time) - timedelta(minutes=15)).time())
+        count = Appointment.objects.count()
+        call_command('seed_demo', stdout=StringIO())
+        self.assertEqual(Appointment.objects.count(), count)
+
+
+class ConcurrentTransitionTests(TransactionTestCase):
+    """Real threads changing one appointment at the same moment."""
+
+    def test_confirm_and_decline_at_the_same_moment_only_one_wins(self):
+        from users.tests import make_verified_doctor
+        doctor = make_verified_doctor('doc')
+        set_hours(doctor)
+        patient = User.objects.create_user('pat', password='x')
+        appointment = Appointment.objects.create(patient=patient, doctor=doctor, appointment_date=TOMORROW, appointment_time=time(10, 0))
+        both_read = threading.Barrier(2, timeout=1)
+        real_refresh = Appointment.refresh_from_db
+        results = []
+
+        def slow_refresh(instance, *args, **kwargs):
+            real_refresh(instance, *args, **kwargs)
+            try:
+                both_read.wait()  # without the lock, both threads meet here, each having read 'pending'
+            except threading.BrokenBarrierError:
+                pass  # with the lock, the other thread is still queued for it, so this one carries on alone
+
+        def change(method, *args):
+            try:
+                getattr(Appointment.objects.get(pk=appointment.pk), method)(*args)
+                results.append('done')
+            except ValidationError as error:
+                results.append(error.messages[0])
+            finally:
+                connection.close()
+
+        with mock.patch.object(Appointment, 'refresh_from_db', slow_refresh):
+            threads = [threading.Thread(target=change, args=('confirm',)),
+                       threading.Thread(target=change, args=('decline', 'Away that week'))]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=30)
+
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results.count('done'), 1, results)

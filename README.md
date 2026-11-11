@@ -104,7 +104,7 @@ curl -H "Authorization: Bearer $TOKEN" localhost:8000/api/appointments/
 ## Running the tests
 
 ```
-uv run python manage.py test
+uv run python manage.py test --noinput
 ```
 
 ## Branches

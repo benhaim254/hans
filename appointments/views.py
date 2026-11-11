@@ -9,7 +9,7 @@ from users.decorators import role_required
 from users.models import ROLE_DOCTOR, ROLE_PATIENT
 
 from .forms import AppointmentForm, AvailabilityForm, CancelAppointmentForm, NewTimeForm, TimeOffForm, VisitNotesForm
-from .models import CANCELABLE_STATUSES, DOUBLE_BOOKED_MESSAGE, STATUS_COMPLETED, STATUS_PENDING, Appointment, TimeOff
+from .models import CANCELABLE_STATUSES, DOUBLE_BOOKED_MESSAGE, STATUS_COMPLETED, STATUS_PENDING, Appointment, TimeOff, lock_doctor_schedule
 
 
 @role_required(ROLE_PATIENT)
@@ -21,7 +21,9 @@ def patient_dashboard(request):
             try:
                 with transaction.atomic():
                     form.save()
-            except (ValidationError, IntegrityError):  # someone took the slot after our form check ran
+            except ValidationError as error:  # the slot was taken or blocked after our form check ran
+                form.add_error(None, error.messages)
+            except IntegrityError:
                 form.add_error(None, DOUBLE_BOOKED_MESSAGE)
             else:
                 messages.success(request, 'Appointment requested. The doctor will confirm it shortly.')
@@ -84,11 +86,14 @@ def add_time_off(request):
     time_off_form = TimeOffForm(request.POST, instance=TimeOff(doctor=request.user))
     if not time_off_form.is_valid():
         return _render_availability(request, AvailabilityForm(doctor=request.user), time_off_form)
-    time_off = time_off_form.save()
+    # Under the doctor's lock, so a booking being saved right now is either counted below or refused.
+    with transaction.atomic():
+        lock_doctor_schedule(request.user.pk)
+        time_off = time_off_form.save()
+        clashes = Appointment.objects.filter(
+            doctor=request.user, status__in=CANCELABLE_STATUSES,
+            appointment_date__range=(time_off.start_date, time_off.end_date)).count()
     messages.success(request, 'Time off added. No new bookings will be accepted on those days.')
-    clashes = Appointment.objects.filter(
-        doctor=request.user, status__in=CANCELABLE_STATUSES,
-        appointment_date__range=(time_off.start_date, time_off.end_date)).count()
     if clashes:
         messages.warning(request, f'You already have {clashes} appointment(s) during this time off. '
                                   'Decline or move them from your schedule.')
@@ -158,8 +163,11 @@ def respond_to_request(request, appointment_id):
     decline_form = CancelAppointmentForm(request.POST if request.POST.get('action') == 'decline' else None)
     propose_form = NewTimeForm(request.POST if request.POST.get('action') == 'propose' else None)
     if decline_form.is_valid():
-        appointment.decline(decline_form.cleaned_data['cancellation_reason'])
-        messages.success(request, 'Request declined. The patient has been told why.')
+        try:
+            appointment.decline(decline_form.cleaned_data['cancellation_reason'])
+            messages.success(request, 'Request declined. The patient has been told why.')
+        except ValidationError as error:  # e.g. the patient cancelled after this page loaded
+            messages.error(request, error.messages[0])
         return redirect('doctor_dashboard')
     if propose_form.is_valid() and propose_form.apply(appointment.propose):
         messages.success(request, 'New time proposed. The patient can accept or decline it.')

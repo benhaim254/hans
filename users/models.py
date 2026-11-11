@@ -84,11 +84,12 @@ class User(AbstractUser):
     objects = UserManager()
 
     def save(self, *args, **kwargs):
-        # The admin role means managing the system through the admin site, which needs staff access.
-        if self.role == ROLE_ADMIN and not self.is_staff:
-            self.is_staff = True
-            if kwargs.get('update_fields') is not None:
-                kwargs['update_fields'] = {*kwargs['update_fields'], 'is_staff'}
+        # Staff access follows the admin role, so demoting an admin removes it. Superusers always keep it.
+        update_fields = kwargs.get('update_fields')
+        if update_fields is None or 'role' in update_fields:
+            self.is_staff = self.role == ROLE_ADMIN or self.is_superuser
+            if update_fields is not None:
+                kwargs['update_fields'] = {*update_fields, 'is_staff'}
         super().save(*args, **kwargs)
 
 #Return username and role for easy identification in admin and debugging.

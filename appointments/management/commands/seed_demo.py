@@ -1,10 +1,11 @@
 from datetime import time, timedelta
 
+from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
-from appointments.models import STATUS_SCHEDULED, Appointment, WorkingHours
+from appointments.models import STATUS_PENDING, STATUS_SCHEDULED, Appointment, WorkingHours
 from users.models import ROLE_DOCTOR, ROLE_PATIENT, DoctorProfile, KmpdcRegister, User
 
 DEMO_PASSWORD = 'hans-demo-2026'
@@ -64,20 +65,27 @@ class Command(BaseCommand):
             (patients[0], doctors[1], next_workday(today, 3), time(14, 30), 'Child vaccination'),
             (patients[1], doctors[0], next_workday(today, 2), time(11, 0), 'Blood pressure review'),
         ]
-        for patient, doctor, day, at, reason in slots:
-            Appointment.objects.get_or_create(
-                doctor=doctor, appointment_date=day, appointment_time=at,
-                defaults={'patient': patient, 'reason': reason})
+        for slot in slots:
+            self._book(*slot)
         # A confirmed appointment that already happened, so the Completed and No-show buttons have something to act on.
-        Appointment.objects.get_or_create(
-            doctor=doctors[1], appointment_date=next_workday(today, -1), appointment_time=time(10, 0),
-            defaults={'patient': patients[1], 'reason': 'Follow-up on test results', 'status': STATUS_SCHEDULED})
+        self._book(patients[1], doctors[1], next_workday(today, -1), time(10, 0), 'Follow-up on test results',
+                   status=STATUS_SCHEDULED)
 
         if options['with_admin'] and not User.objects.filter(username='admin').exists():
             User.objects.create_superuser('admin', 'admin@hans.local', DEMO_PASSWORD)
 
         names = ', '.join(u.username for u in doctors + patients)
         self.stdout.write(self.style.SUCCESS(f"Demo data ready. Log in as {names} with password '{DEMO_PASSWORD}'."))
+
+    def _book(self, patient, doctor, day, at, reason, status=STATUS_PENDING):
+        """Add a demo appointment unless that slot has been used before or is no longer bookable."""
+        if Appointment.objects.filter(doctor=doctor, appointment_date=day, appointment_time=at).exists():
+            return
+        try:
+            Appointment.objects.create(patient=patient, doctor=doctor, appointment_date=day, appointment_time=at,
+                                       reason=reason, status=status)
+        except ValidationError:
+            pass  # a real booking or time off now covers that time
 
     def _user(self, username, first, last, role):
         user, created = User.objects.get_or_create(
