@@ -54,6 +54,15 @@ class UserManager(DjangoUserManager):
         """Doctors whose KMPDC number has been checked; only these can be booked."""
         return self.filter(role=ROLE_DOCTOR, doctorprofile__kmpdc__isnull=False)
 
+# Every appointment is at least 30 minutes; doctors may choose longer.
+APPOINTMENT_LENGTH_CHOICES = [
+    (30, '30 minutes'),
+    (45, '45 minutes'),
+    (60, '1 hour'),
+    (90, '1 hour 30 minutes'),
+    (120, '2 hours'),
+]
+
 
 class User(AbstractUser):
     """
@@ -131,7 +140,9 @@ class DoctorProfile(CommonProfile):
     # One register entry per doctor: the OneToOne makes reusing a number impossible at the database level.
     kmpdc = models.OneToOneField('KmpdcRegister', on_delete=models.PROTECT, null=True, blank=True,
                                  related_name='doctor', verbose_name='KMPDC number')
-    available_days= models.CharField(max_length=100, blank=True, help_text="e.g Mon, Wed, Fri")
+    appointment_length = models.PositiveSmallIntegerField(
+        choices=APPOINTMENT_LENGTH_CHOICES, default=30,
+        help_text='How long each appointment with this doctor lasts.')
     
     class Meta:
         verbose_name = 'Doctor Profile'

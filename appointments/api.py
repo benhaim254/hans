@@ -1,13 +1,17 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.shortcuts import get_object_or_404
+from django.utils.dateparse import parse_date
 from rest_framework import mixins, serializers, viewsets
-from rest_framework.decorators import action
+from rest_framework.authentication import SessionAuthentication
+from rest_framework.decorators import action, api_view, authentication_classes, permission_classes
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from users.models import ROLE_DOCTOR, ROLE_PATIENT
+from users.models import ROLE_DOCTOR, ROLE_PATIENT, User
 from users.permissions import IsDoctor, IsPatient
 
-from .models import Appointment
+from .models import Appointment, available_slots
 from .serializers import AppointmentSerializer, CancelSerializer
 
 
@@ -59,3 +63,23 @@ class AppointmentViewSet(mixins.ListModelMixin,
         body.is_valid(raise_exception=True)
         reason = body.validated_data['cancellation_reason']
         return self._transition(lambda appointment: appointment.cancel(reason))
+
+
+@api_view(['GET'])
+# Session auth too, so the booking page can call this with the logged-in browser session.
+@authentication_classes([JWTAuthentication, SessionAuthentication])
+@permission_classes([IsAuthenticated])
+def doctor_slots(request, doctor_id):
+    """Free start times for a verified doctor on ?date=YYYY-MM-DD."""
+    doctor = get_object_or_404(User.objects.verified_doctors(), pk=doctor_id)
+    try:
+        day = parse_date(request.query_params.get('date', ''))
+    except ValueError:  # well-formed but impossible, e.g. 2026-02-30
+        day = None
+    if day is None:
+        raise serializers.ValidationError({'date': 'Use the format YYYY-MM-DD.'})
+    return Response({
+        'date': day.isoformat(),
+        'duration_minutes': doctor.doctorprofile.appointment_length,
+        'slots': [slot.strftime('%H:%M') for slot in available_slots(doctor, day)],
+    })

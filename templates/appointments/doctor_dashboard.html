@@ -2,6 +2,12 @@
 {% block title %}My patients{% endblock %}
 {% block content %}
 <h1 class="h3 mb-4">My patients</h1>
+{% if not has_working_hours %}
+    <div class="alert alert-warning">
+        <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
+        Patients can't book you yet. <a href="{% url 'availability' %}" class="alert-link">Set your working hours</a>.
+    </div>
+{% endif %}
 <div class="card">
     {% if appointments %}
         <div class="table-responsive">
@@ -21,7 +27,7 @@
                     <tr>
                         <td class="fw-medium">{{ appointment.patient.get_full_name|default:appointment.patient.username }}</td>
                         <td>{{ appointment.appointment_date|date:"D j M Y" }}</td>
-                        <td>{{ appointment.appointment_time|time:"H:i" }}</td>
+                        <td>{{ appointment.appointment_time|time:"H:i" }} to {{ appointment.end_time|time:"H:i" }}</td>
                         <td>
                             {% if appointment.reason %}{{ appointment.reason }}{% else %}<span class="text-secondary">None given</span>{% endif %}
                             {% if appointment.cancellation_reason %}

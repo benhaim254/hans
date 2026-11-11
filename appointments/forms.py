@@ -1,9 +1,12 @@
+from datetime import time
+
 from django import forms
+from django.db import transaction
 
 from hans.forms import BootstrapFormMixin
-from users.models import User
+from users.models import APPOINTMENT_LENGTH_CHOICES, User
 
-from .models import Appointment
+from .models import WEEKDAYS, Appointment, WorkingHours
 
 
 class AppointmentForm(BootstrapFormMixin, forms.ModelForm):
@@ -22,7 +25,8 @@ class AppointmentForm(BootstrapFormMixin, forms.ModelForm):
         fields = ['doctor', 'appointment_date', 'appointment_time', 'reason']
         widgets = {
             'appointment_date': forms.DateInput(attrs={'type': 'date'}),
-            'appointment_time': forms.TimeInput(attrs={'type': 'time'}),
+            # Options are filled in the browser from the free-slots API once a doctor and date are picked.
+            'appointment_time': forms.Select(choices=[('', 'Pick a doctor and date first')]),
         }
 
 
@@ -32,3 +36,57 @@ class CancelAppointmentForm(forms.Form):
         max_length=500,
         widget=forms.TextInput(attrs={'placeholder': 'Reason for canceling'}),
     )
+
+
+class AvailabilityForm(forms.Form):
+    """A doctor's appointment length plus one optional working range per weekday."""
+    appointment_length = forms.TypedChoiceField(choices=APPOINTMENT_LENGTH_CHOICES, coerce=int,
+                                                widget=forms.Select(attrs={'class': 'form-select'}))
+
+    def __init__(self, *args, doctor, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.doctor = doctor
+        self.fields['appointment_length'].initial = doctor.doctorprofile.appointment_length
+        existing = {hours.weekday: hours for hours in doctor.working_hours.all()}
+        time_input = {'type': 'time', 'class': 'form-control form-control-sm'}
+        for day, name in WEEKDAYS:
+            hours = existing.get(day)
+            self.fields[f'works_{day}'] = forms.BooleanField(
+                required=False, initial=hours is not None, label=name,
+                widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}))
+            self.fields[f'start_{day}'] = forms.TimeField(
+                required=False, initial=hours.start_time if hours else time(8, 0),
+                label=f'{name} start', widget=forms.TimeInput(attrs=time_input, format='%H:%M'))
+            self.fields[f'end_{day}'] = forms.TimeField(
+                required=False, initial=hours.end_time if hours else time(17, 0),
+                label=f'{name} end', widget=forms.TimeInput(attrs=time_input, format='%H:%M'))
+
+    def days(self):
+        """(works, start, end) bound fields per weekday, for the template table."""
+        return [(self[f'works_{day}'], self[f'start_{day}'], self[f'end_{day}']) for day, _ in WEEKDAYS]
+
+    def clean(self):
+        cleaned = super().clean()
+        for day, name in WEEKDAYS:
+            if not cleaned.get(f'works_{day}'):
+                continue
+            start, end = cleaned.get(f'start_{day}'), cleaned.get(f'end_{day}')
+            if not start or not end:
+                self.add_error(f'start_{day}', f'Give a start and end time for {name}.')
+            elif end <= start:
+                self.add_error(f'end_{day}', f'{name} must end after it starts.')
+        return cleaned
+
+    @transaction.atomic
+    def save(self):
+        profile = self.doctor.doctorprofile
+        profile.appointment_length = self.cleaned_data['appointment_length']
+        profile.save(update_fields=['appointment_length'])
+        for day, _ in WEEKDAYS:
+            if self.cleaned_data[f'works_{day}']:
+                WorkingHours.objects.update_or_create(
+                    doctor=self.doctor, weekday=day,
+                    defaults={'start_time': self.cleaned_data[f'start_{day}'],
+                              'end_time': self.cleaned_data[f'end_{day}']})
+            else:
+                WorkingHours.objects.filter(doctor=self.doctor, weekday=day).delete()
