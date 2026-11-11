@@ -14,7 +14,7 @@ from users.models import ROLE_DOCTOR, ROLE_PATIENT, User
 from users.tests import make_verified_doctor
 
 from .models import (STATUS_CANCELED, STATUS_COMPLETED, STATUS_NO_SHOW, STATUS_PENDING, STATUS_SCHEDULED,
-                     Appointment, WorkingHours, available_slots)
+                     Appointment, TimeOff, WorkingHours, available_slots)
 
 TOMORROW = timezone.localdate() + timedelta(days=1)
 
@@ -441,3 +441,45 @@ class DoctorScheduleTests(AppointmentTestCase):
         self.assertEqual(sections['Today'], [early_today, late_today])
         self.assertEqual(sections['Upcoming'], [upcoming])
         self.assertEqual(sections['Past'], [past])
+
+
+class TimeOffTests(AppointmentTestCase):
+    def setUp(self):
+        super().setUp()
+        self.leave = TimeOff.objects.create(doctor=self.doctor, start_date=TOMORROW, end_date=TOMORROW + timedelta(days=2))
+
+    def test_no_slots_and_no_booking_on_leave(self):
+        self.assertEqual(available_slots(self.doctor, TOMORROW), [])
+        self.client.force_login(self.patient)
+        response = self.client.post(reverse('patient_dashboard'), {
+            'doctor': self.doctor.pk, 'appointment_date': TOMORROW, 'appointment_time': '09:00'})
+        self.assertContains(response, 'on leave that day')
+        self.assertFalse(Appointment.objects.exists())
+        self.assertNotEqual(available_slots(self.doctor, TOMORROW + timedelta(days=3)), [])
+
+    def test_doctor_adds_time_off_and_is_warned_about_clashes(self):
+        later = TOMORROW + timedelta(days=10)
+        self.book(appointment_date=later)
+        self.client.force_login(self.doctor)
+        response = self.client.post(reverse('add_time_off'), {
+            'start_date': later, 'end_date': later, 'reason': 'Conference'}, follow=True)
+        self.assertContains(response, 'Time off added')
+        self.assertContains(response, 'You already have 1 appointment(s)')
+        self.assertTrue(TimeOff.objects.filter(doctor=self.doctor, reason='Conference').exists())
+
+    def test_invalid_ranges_rejected(self):
+        self.client.force_login(self.doctor)
+        response = self.client.post(reverse('add_time_off'), {
+            'start_date': TOMORROW + timedelta(days=5), 'end_date': TOMORROW})
+        self.assertContains(response, 'cannot be before the first day')
+        response = self.client.post(reverse('add_time_off'), {
+            'start_date': timezone.localdate() - timedelta(days=1), 'end_date': TOMORROW})
+        self.assertContains(response, 'cannot start in the past')
+        self.assertEqual(TimeOff.objects.count(), 1)
+
+    def test_only_owner_can_remove(self):
+        self.client.force_login(self.other_doctor)
+        self.assertEqual(self.client.post(reverse('delete_time_off', args=[self.leave.pk])).status_code, 404)
+        self.client.force_login(self.doctor)
+        self.client.post(reverse('delete_time_off', args=[self.leave.pk]))
+        self.assertFalse(TimeOff.objects.exists())

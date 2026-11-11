@@ -8,8 +8,8 @@ from django.views.decorators.http import require_POST
 from users.decorators import role_required
 from users.models import ROLE_DOCTOR, ROLE_PATIENT
 
-from .forms import AppointmentForm, AvailabilityForm, CancelAppointmentForm
-from .models import DOUBLE_BOOKED_MESSAGE, Appointment
+from .forms import AppointmentForm, AvailabilityForm, CancelAppointmentForm, TimeOffForm
+from .models import CANCELABLE_STATUSES, DOUBLE_BOOKED_MESSAGE, Appointment, TimeOff
 
 
 @role_required(ROLE_PATIENT)
@@ -67,7 +67,40 @@ def availability(request):
         form.save()
         messages.success(request, 'Availability saved.')
         return redirect('availability')
-    return render(request, 'appointments/availability.html', {'form': form})
+    return _render_availability(request, form, TimeOffForm())
+
+
+def _render_availability(request, form, time_off_form):
+    return render(request, 'appointments/availability.html', {
+        'form': form,
+        'time_off_form': time_off_form,
+        'time_off': request.user.time_off.filter(end_date__gte=timezone.localdate()),
+    })
+
+
+@require_POST
+@role_required(ROLE_DOCTOR)
+def add_time_off(request):
+    time_off_form = TimeOffForm(request.POST, instance=TimeOff(doctor=request.user))
+    if not time_off_form.is_valid():
+        return _render_availability(request, AvailabilityForm(doctor=request.user), time_off_form)
+    time_off = time_off_form.save()
+    messages.success(request, 'Time off added. No new bookings will be accepted on those days.')
+    clashes = Appointment.objects.filter(
+        doctor=request.user, status__in=CANCELABLE_STATUSES,
+        appointment_date__range=(time_off.start_date, time_off.end_date)).count()
+    if clashes:
+        messages.warning(request, f'You already have {clashes} appointment(s) during this time off. '
+                                  'Decline or move them from your schedule.')
+    return redirect('availability')
+
+
+@require_POST
+@role_required(ROLE_DOCTOR)
+def delete_time_off(request, pk):
+    get_object_or_404(TimeOff, pk=pk, doctor=request.user).delete()
+    messages.success(request, 'Time off removed.')
+    return redirect('availability')
 
 
 @require_POST
