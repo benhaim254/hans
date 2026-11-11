@@ -2,6 +2,7 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from users.decorators import role_required
@@ -39,11 +40,22 @@ def patient_dashboard(request):
 
 @role_required(ROLE_DOCTOR)
 def doctor_dashboard(request):
-    appointments = (Appointment.objects
-                    .filter(doctor=request.user)
-                    .select_related('patient__patientprofile'))
+    # shortcut: loads every appointment the doctor has ever had; paginate Past once lists get long.
+    appointments = list(Appointment.objects
+                        .filter(doctor=request.user)
+                        .select_related('patient__patientprofile')
+                        .order_by('appointment_date', 'appointment_time'))
+    today = timezone.localdate()
+    sections = [
+        ('Today', 'bi-calendar-day', [a for a in appointments if a.appointment_date == today],
+         'Nothing booked for today.'),
+        ('Upcoming', 'bi-calendar-week', [a for a in appointments if a.appointment_date > today],
+         'No upcoming appointments.'),
+        ('Past', 'bi-clock-history', [a for a in reversed(appointments) if a.appointment_date < today],
+         'No past appointments yet.'),
+    ]
     return render(request, 'appointments/doctor_dashboard.html', {
-        'appointments': appointments,
+        'sections': sections,
         'has_working_hours': request.user.working_hours.exists(),
     })
 
