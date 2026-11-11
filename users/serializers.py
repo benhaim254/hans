@@ -1,6 +1,6 @@
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -36,8 +36,14 @@ class RegisterSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({'kmpdc_number': error.messages})
         return attrs
 
-    @transaction.atomic
     def create(self, validated_data):
+        try:
+            return self._create(validated_data)
+        except IntegrityError:  # same username or KMPDC number claimed by a simultaneous sign-up
+            raise serializers.ValidationError('Someone registered with these details at the same moment. Please try again.')
+
+    @transaction.atomic
+    def _create(self, validated_data):
         kmpdc_entry = validated_data.pop('kmpdc_entry')
         user = User.objects.create_user(**validated_data)
         if kmpdc_entry:

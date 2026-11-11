@@ -51,7 +51,8 @@ def notify_on_appointment_change(sender, instance, created, **kwargs):
 
     previous = getattr(instance, '_previous_status', None)
     moved = getattr(instance, '_previous_time', None) != [instance.appointment_date, instance.appointment_time]
-    if instance.status == STATUS_PENDING and moved:
+    # A reschedule, including back to the same time, returns the appointment to pending for the doctor.
+    if instance.status == STATUS_PENDING and (moved or previous not in (None, STATUS_PENDING)):
         notify(instance.doctor, instance, f"{display_name(instance.patient)} moved their appointment to {when}. Please confirm the new time.")
         return
     if previous == instance.status:
