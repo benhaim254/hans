@@ -427,3 +427,17 @@ class SameMomentBookingTests(AppointmentTestCase):
                 'doctor': self.doctor.pk, 'appointment_date': TOMORROW, 'appointment_time': '09:00'})
         self.assertEqual(response.status_code, 400)
         self.assertEqual(Appointment.objects.count(), 1)
+
+
+class DoctorScheduleTests(AppointmentTestCase):
+    def test_dashboard_splits_today_upcoming_past(self):
+        today = timezone.localdate()
+        late_today = self.book(appointment_date=today, appointment_time=time(16, 0))
+        early_today = self.book(appointment_date=today, appointment_time=time(8, 0))
+        upcoming = self.book(appointment_date=TOMORROW)
+        past = self.book(appointment_date=today - timedelta(days=1))
+        self.client.force_login(self.doctor)
+        sections = {title: items for title, _, items, _ in self.client.get(reverse('doctor_dashboard')).context['sections']}
+        self.assertEqual(sections['Today'], [early_today, late_today])
+        self.assertEqual(sections['Upcoming'], [upcoming])
+        self.assertEqual(sections['Past'], [past])

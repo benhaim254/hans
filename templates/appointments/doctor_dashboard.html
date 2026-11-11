@@ -1,95 +1,17 @@
 {% extends "base.html" %}
-{% block title %}My patients{% endblock %}
+{% block title %}My schedule{% endblock %}
 {% block content %}
-<h1 class="h3 mb-4">My patients</h1>
+<h1 class="h3 mb-2">My schedule</h1>
+<p class="text-secondary mb-3">{% now "l j F Y" %}</p>
 {% if not has_working_hours %}
     <div class="alert alert-warning">
         <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
         Patients can't book you yet. <a href="{% url 'availability' %}" class="alert-link">Set your working hours</a>.
     </div>
 {% endif %}
-<div class="card">
-    {% if appointments %}
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th scope="col">Patient</th>
-                        <th scope="col">Date</th>
-                        <th scope="col">Time</th>
-                        <th scope="col">Reason</th>
-                        <th scope="col">Status</th>
-                        <th scope="col"><span class="visually-hidden">Actions</span></th>
-                    </tr>
-                </thead>
-                <tbody>
-                {% for appointment in appointments %}
-                    <tr>
-                        <td>
-                            {% with profile=appointment.patient.patientprofile %}
-                            <span class="fw-medium">{{ appointment.patient.get_full_name|default:appointment.patient.username }}</span>
-                            {% if profile.allergies %}<span class="badge text-bg-danger ms-1">Allergies</span>{% endif %}
-                            <details class="small mt-1">
-                                <summary class="text-primary">Patient details</summary>
-                                <dl class="row mb-0 mt-2">
-                                    <dt class="col-5 fw-normal text-secondary">Date of birth</dt>
-                                    <dd class="col-7 mb-1">{{ profile.date_of_birth|date:"j M Y"|default:"Not given" }}</dd>
-                                    <dt class="col-5 fw-normal text-secondary">Gender</dt>
-                                    <dd class="col-7 mb-1">{{ profile.get_gender_display|default:"Not given" }}</dd>
-                                    <dt class="col-5 fw-normal text-secondary">Phone</dt>
-                                    <dd class="col-7 mb-1">{{ profile.phone_number|default:"Not given" }}</dd>
-                                    <dt class="col-5 fw-normal text-secondary">Blood group</dt>
-                                    <dd class="col-7 mb-1">{{ profile.blood_group|default:"Not given" }}</dd>
-                                    <dt class="col-5 fw-normal text-secondary">Allergies</dt>
-                                    <dd class="col-7 mb-1 {% if profile.allergies %}text-danger fw-medium{% endif %}">{{ profile.allergies|default:"None recorded" }}</dd>
-                                    <dt class="col-5 fw-normal text-secondary">Emergency contact</dt>
-                                    <dd class="col-7 mb-0">
-                                        {% if profile.emergency_contact_name or profile.emergency_contact_phone %}
-                                            {{ profile.emergency_contact_name }} {{ profile.emergency_contact_phone }}
-                                        {% else %}Not given{% endif %}
-                                    </dd>
-                                </dl>
-                            </details>
-                            {% endwith %}
-                        </td>
-                        <td>{{ appointment.appointment_date|date:"D j M Y" }}</td>
-                        <td>{{ appointment.appointment_time|time:"H:i" }} to {{ appointment.end_time|time:"H:i" }}</td>
-                        <td>
-                            {% if appointment.reason %}{{ appointment.reason }}{% else %}<span class="text-secondary">None given</span>{% endif %}
-                            {% if appointment.cancellation_reason %}
-                                <div class="small text-danger">Canceled: {{ appointment.cancellation_reason }}</div>
-                            {% endif %}
-                        </td>
-                        <td><span class="badge rounded-pill status-{{ appointment.status }}">{{ appointment.get_status_display }}</span></td>
-                        <td class="text-end">
-                            {% if appointment.status == 'pending' %}
-                                <form method="POST" action="{% url 'confirm_appointment' appointment.appointment_id %}" class="m-0">
-                                    {% csrf_token %}
-                                    <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-check2 me-1" aria-hidden="true"></i>Confirm</button>
-                                </form>
-                            {% elif appointment.status == 'scheduled' and appointment.has_started %}
-                                <div class="d-inline-flex gap-1">
-                                    <form method="POST" action="{% url 'complete_appointment' appointment.appointment_id %}" class="m-0">
-                                        {% csrf_token %}
-                                        <button type="submit" class="btn btn-sm btn-outline-success"><i class="bi bi-check2-all me-1" aria-hidden="true"></i>Completed</button>
-                                    </form>
-                                    <form method="POST" action="{% url 'no_show_appointment' appointment.appointment_id %}" class="m-0">
-                                        {% csrf_token %}
-                                        <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-person-x me-1" aria-hidden="true"></i>No-show</button>
-                                    </form>
-                                </div>
-                            {% endif %}
-                        </td>
-                    </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    {% else %}
-        <div class="card-body text-center text-secondary py-5">
-            <i class="bi bi-inbox display-6 d-block mb-2" aria-hidden="true"></i>
-            You have no assigned appointments.
-        </div>
-    {% endif %}
-</div>
+{% for title, icon, appointments, empty_message in sections %}
+    <h2 class="h5 mt-4 mb-3"><i class="bi {{ icon }} me-1" aria-hidden="true"></i>{{ title }}
+        <span class="badge rounded-pill text-bg-light border ms-1">{{ appointments|length }}</span></h2>
+    {% include "appointments/_doctor_appointment_table.html" %}
+{% endfor %}
 {% endblock %}
