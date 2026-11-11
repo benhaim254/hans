@@ -212,10 +212,11 @@ class Appointment(models.Model):
         self._take_doctor_length()
         if not self._state.adding or self.status in INACTIVE_STATUSES:
             return super().save(*args, **kwargs)
-        # A new booking: re-check for overlaps under the doctor's lock, so a booking saved a moment
-        # ago by someone else (after our clean() ran) is seen before we insert.
+        # A new booking: re-check leave and overlaps under the doctor's lock, so time off or a booking
+        # saved a moment ago by someone else (after our clean() ran) is seen before we insert.
         with transaction.atomic():
             lock_doctor_schedule(self.doctor_id)
+            self._check_not_on_leave()
             self._check_free()
             super().save(*args, **kwargs)
 
@@ -235,8 +236,7 @@ class Appointment(models.Model):
             raise ValidationError({'appointment_date': 'Appointments cannot be booked in the past.'})
         if self.has_started:
             raise ValidationError({'appointment_time': 'That time has already passed.'})
-        if on_leave(self.doctor_id, self.appointment_date):
-            raise ValidationError({'appointment_date': 'The doctor is on leave that day.'})
+        self._check_not_on_leave()
         hours = self.doctor.working_hours.filter(weekday=self.appointment_date.weekday()).first()
         if hours is None:
             raise ValidationError({'appointment_date': "The doctor doesn't work on that day."})
@@ -246,6 +246,10 @@ class Appointment(models.Model):
             raise ValidationError({'appointment_time': (
                 f"A {self.duration_minutes}-minute appointment must fit between "
                 f"{hours.start_time:%H:%M} and {hours.end_time:%H:%M}.")})
+
+    def _check_not_on_leave(self):
+        if on_leave(self.doctor_id, self.appointment_date):
+            raise ValidationError({'appointment_date': 'The doctor is on leave that day.'})
 
     def _check_free(self):
         busy = _busy_ranges(self.doctor_id, self.appointment_date, exclude_pk=self.pk)

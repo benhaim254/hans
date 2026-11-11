@@ -223,3 +223,20 @@ class RoleAndRegisterReviewTests(TestCase):
             response = self.client.post(reverse('users:register'), {
                 'username': 'pat2', 'role': 'patient', 'password1': STRONG_PASSWORD, 'password2': STRONG_PASSWORD})
         self.assertContains(response, 'at the same moment')
+
+    def test_staff_access_follows_the_admin_role(self):
+        ops = User.objects.create_user('ops', password=STRONG_PASSWORD, role=ROLE_ADMIN)
+        ops.role = ROLE_PATIENT
+        ops.save()
+        self.assertFalse(ops.is_staff)
+        ops.role = ROLE_ADMIN
+        ops.save(update_fields=['role'])
+        ops.refresh_from_db()
+        self.assertTrue(ops.is_staff)
+        ops.role = ROLE_PATIENT
+        ops.save(update_fields=['role'])
+        ops.refresh_from_db()
+        self.assertFalse(ops.is_staff)
+        # A superuser keeps staff access whatever the role, so nobody can lock themselves out.
+        root = User.objects.create_superuser('root', 'root@example.com', STRONG_PASSWORD, role=ROLE_PATIENT)
+        self.assertTrue(root.is_staff)
