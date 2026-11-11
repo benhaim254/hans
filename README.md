@@ -18,7 +18,7 @@ Doctors can:
 - register, log in and fill in a profile (department, specialization, license number)
 - set their working hours and appointment length
 - see each patient's date of birth, blood group, allergies and emergency contact on their appointments, and only for their own patients
-- see the appointments booked with them, confirm pending ones, and mark past ones as completed or a no-show
+- see their schedule grouped into Today, Upcoming and Past, confirm pending appointments, and mark past ones as completed or a no-show
 - get notified when a patient books or cancels
 
 Admins manage users, profiles, appointments and notifications in the Django admin. Running `createsuperuser` gives the account the admin role.
