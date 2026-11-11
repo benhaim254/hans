@@ -163,3 +163,10 @@ class AdminTests(TestCase):
         user = User.objects.get(username='newdoc')
         self.assertTrue(user.check_password(STRONG_PASSWORD))
         self.assertEqual(user.role, ROLE_DOCTOR)
+
+
+class DeliberateCIFailure(TestCase):
+    """Throwaway: proves CI turns red on a failing test. Never merge."""
+
+    def test_this_should_fail(self):
+        self.assertEqual(1, 2)
