@@ -25,7 +25,33 @@
                 <tbody>
                 {% for appointment in appointments %}
                     <tr>
-                        <td class="fw-medium">{{ appointment.patient.get_full_name|default:appointment.patient.username }}</td>
+                        <td>
+                            {% with profile=appointment.patient.patientprofile %}
+                            <span class="fw-medium">{{ appointment.patient.get_full_name|default:appointment.patient.username }}</span>
+                            {% if profile.allergies %}<span class="badge text-bg-danger ms-1">Allergies</span>{% endif %}
+                            <details class="small mt-1">
+                                <summary class="text-primary">Patient details</summary>
+                                <dl class="row mb-0 mt-2">
+                                    <dt class="col-5 fw-normal text-secondary">Date of birth</dt>
+                                    <dd class="col-7 mb-1">{{ profile.date_of_birth|date:"j M Y"|default:"Not given" }}</dd>
+                                    <dt class="col-5 fw-normal text-secondary">Gender</dt>
+                                    <dd class="col-7 mb-1">{{ profile.get_gender_display|default:"Not given" }}</dd>
+                                    <dt class="col-5 fw-normal text-secondary">Phone</dt>
+                                    <dd class="col-7 mb-1">{{ profile.phone_number|default:"Not given" }}</dd>
+                                    <dt class="col-5 fw-normal text-secondary">Blood group</dt>
+                                    <dd class="col-7 mb-1">{{ profile.blood_group|default:"Not given" }}</dd>
+                                    <dt class="col-5 fw-normal text-secondary">Allergies</dt>
+                                    <dd class="col-7 mb-1 {% if profile.allergies %}text-danger fw-medium{% endif %}">{{ profile.allergies|default:"None recorded" }}</dd>
+                                    <dt class="col-5 fw-normal text-secondary">Emergency contact</dt>
+                                    <dd class="col-7 mb-0">
+                                        {% if profile.emergency_contact_name or profile.emergency_contact_phone %}
+                                            {{ profile.emergency_contact_name }} {{ profile.emergency_contact_phone }}
+                                        {% else %}Not given{% endif %}
+                                    </dd>
+                                </dl>
+                            </details>
+                            {% endwith %}
+                        </td>
                         <td>{{ appointment.appointment_date|date:"D j M Y" }}</td>
                         <td>{{ appointment.appointment_time|time:"H:i" }} to {{ appointment.end_time|time:"H:i" }}</td>
                         <td>
