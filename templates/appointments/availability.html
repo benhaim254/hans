@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}My availability{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-body p-4">
+                <h1 class="h4 mb-1">My availability</h1>
+                <p class="text-secondary mb-4">Patients can only book times inside these hours. Changes don't move appointments that are already booked.</p>
+                <form method="POST">
+                    {% csrf_token %}
+                    {{ form.non_field_errors }}
+                    <div>
+                        <label for="{{ form.appointment_length.id_for_label }}">Appointment length</label>
+                        {{ form.appointment_length }}
+                    </div>
+                    <table class="table align-middle">
+                        <thead>
+                            <tr>
+                                <th scope="col">Day</th>
+                                <th scope="col">Start</th>
+                                <th scope="col">End</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for works, start, end in form.days %}
+                            <tr>
+                                <td>
+                                    <div class="form-check m-0">
+                                        {{ works }}
+                                        <label class="form-check-label fw-normal" for="{{ works.id_for_label }}">{{ works.label }}</label>
+                                    </div>
+                                </td>
+                                <td>{{ start.errors }}<label class="visually-hidden" for="{{ start.id_for_label }}">{{ start.label }}</label>{{ start }}</td>
+                                <td>{{ end.errors }}<label class="visually-hidden" for="{{ end.id_for_label }}">{{ end.label }}</label>{{ end }}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                    <button type="submit" class="btn btn-primary">Save availability</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

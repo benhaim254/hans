@@ -7,9 +7,10 @@
         <div class="card">
             <div class="card-body">
                 <h2 class="h5 mb-3"><i class="bi bi-calendar-plus me-1" aria-hidden="true"></i>Book an appointment</h2>
-                <form method="POST">
+                <form method="POST" id="booking-form" data-selected-time="{{ form.appointment_time.value|default_if_none:''|slice:':5' }}">
                     {% csrf_token %}
                     {{ form.as_div }}
+                    <p class="small text-secondary" id="slot-note" aria-live="polite"></p>
                     <button type="submit" class="btn btn-primary w-100">Book appointment</button>
                 </form>
             </div>
@@ -25,7 +26,7 @@
                             <h2 class="h6 mb-1">Dr. {{ appointment.doctor.get_full_name|default:appointment.doctor.username }}</h2>
                             <div class="text-secondary small">
                                 <i class="bi bi-calendar3 me-1" aria-hidden="true"></i>{{ appointment.appointment_date|date:"D j M Y" }}
-                                <i class="bi bi-clock ms-2 me-1" aria-hidden="true"></i>{{ appointment.appointment_time|time:"H:i" }}
+                                <i class="bi bi-clock ms-2 me-1" aria-hidden="true"></i>{{ appointment.appointment_time|time:"H:i" }} to {{ appointment.end_time|time:"H:i" }}
                             </div>
                         </div>
                         <span class="badge rounded-pill status-{{ appointment.status }}">{{ appointment.get_status_display }}</span>
@@ -56,4 +57,44 @@
         {% endfor %}
     </div>
 </div>
+<script>
+// Fill the time list with the doctor's free slots whenever the doctor or date changes.
+(function () {
+    const form = document.getElementById('booking-form');
+    const doctor = form.querySelector('[name=doctor]');
+    const date = form.querySelector('[name=appointment_date]');
+    const time = form.querySelector('[name=appointment_time]');
+    const note = document.getElementById('slot-note');
+    let wanted = form.dataset.selectedTime;
+
+    function setOptions(placeholder, slots) {
+        time.replaceChildren(new Option(placeholder, ''));
+        slots.forEach(slot => time.add(new Option(slot, slot, false, slot === wanted)));
+        wanted = '';
+    }
+
+    async function loadSlots() {
+        if (!doctor.value || !date.value) {
+            setOptions('Pick a doctor and date first', []);
+            note.textContent = '';
+            return;
+        }
+        setOptions('Loading free times...', []);
+        try {
+            const response = await fetch(`/api/doctors/${doctor.value}/slots/?date=${date.value}`);
+            if (!response.ok) throw new Error(response.status);
+            const data = await response.json();
+            setOptions(data.slots.length ? 'Choose a time' : 'No free times that day', data.slots);
+            note.textContent = `Appointments with this doctor last ${data.duration_minutes} minutes.`;
+        } catch (error) {
+            setOptions('Could not load times, try again', []);
+            note.textContent = '';
+        }
+    }
+
+    doctor.addEventListener('change', loadSlots);
+    date.addEventListener('change', loadSlots);
+    loadSlots();
+})();
+</script>
 {% endblock %}

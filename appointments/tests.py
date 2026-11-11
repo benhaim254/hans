@@ -11,9 +11,19 @@ from rest_framework.test import APIClient
 from users.models import ROLE_DOCTOR, ROLE_PATIENT, User
 from users.tests import make_verified_doctor
 
-from .models import STATUS_CANCELED, STATUS_PENDING, STATUS_SCHEDULED, Appointment
+from .models import STATUS_CANCELED, STATUS_PENDING, STATUS_SCHEDULED, Appointment, WorkingHours, available_slots
 
 TOMORROW = timezone.localdate() + timedelta(days=1)
+
+
+def set_hours(doctor, start=time(8, 0), end=time(17, 0), days=range(7), length=None):
+    """Give a doctor the same working range on the given weekdays (every day by default)."""
+    for day in days:
+        WorkingHours.objects.update_or_create(doctor=doctor, weekday=day,
+                                              defaults={'start_time': start, 'end_time': end})
+    if length:
+        doctor.doctorprofile.appointment_length = length
+        doctor.doctorprofile.save()
 
 
 class AppointmentTestCase(TestCase):
@@ -22,6 +32,8 @@ class AppointmentTestCase(TestCase):
         self.other_patient = User.objects.create_user('pat2', password='x', role=ROLE_PATIENT)
         self.doctor = make_verified_doctor('doc')
         self.other_doctor = make_verified_doctor('doc2')
+        set_hours(self.doctor)
+        set_hours(self.other_doctor)
 
     def book(self, patient=None, status=STATUS_PENDING, **overrides):
         fields = dict(patient=patient or self.patient, doctor=self.doctor,
@@ -190,3 +202,121 @@ class SeedDemoTests(TestCase):
         call_command('seed_demo', stdout=StringIO())
         self.assertEqual(User.objects.verified_doctors().count(), 3)
         self.assertEqual(Appointment.objects.count(), 3)
+
+
+class WorkingHoursBookingTests(AppointmentTestCase):
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.patient)
+
+    def post_booking(self, at, day=TOMORROW):
+        return self.client.post(reverse('patient_dashboard'), {
+            'doctor': self.doctor.pk, 'appointment_date': day, 'appointment_time': at})
+
+    def test_booking_takes_doctor_length_and_keeps_it(self):
+        set_hours(self.doctor, length=45)
+        self.post_booking('09:00')
+        appointment = Appointment.objects.get()
+        self.assertEqual(appointment.duration_minutes, 45)
+        self.assertEqual(appointment.end_time, time(9, 45))
+        set_hours(self.doctor, length=60)
+        appointment.refresh_from_db()
+        self.assertEqual(appointment.duration_minutes, 45)
+
+    def test_day_off_rejected(self):
+        WorkingHours.objects.filter(doctor=self.doctor, weekday=TOMORROW.weekday()).delete()
+        response = self.post_booking('09:00')
+        self.assertContains(response, "doesn&#x27;t work on that day")
+        self.assertFalse(Appointment.objects.exists())
+
+    def test_must_fit_inside_hours(self):
+        set_hours(self.doctor, length=60)
+        self.assertContains(self.post_booking('07:30'), 'must fit between 08:00 and 17:00')
+        self.assertContains(self.post_booking('16:30'), 'must fit between 08:00 and 17:00')
+        self.assertFalse(Appointment.objects.exists())
+        self.post_booking('16:00')
+        self.assertTrue(Appointment.objects.exists())
+
+    def test_overlap_with_longer_appointment_rejected(self):
+        set_hours(self.doctor, length=60)
+        self.book(patient=self.other_patient)  # 09:00 to 10:00
+        self.assertContains(self.post_booking('09:30'), 'already booked')
+        self.assertContains(self.post_booking('08:30'), 'already booked')
+        self.post_booking('10:00')
+        self.assertEqual(Appointment.objects.count(), 2)
+
+
+class AvailableSlotsTests(AppointmentTestCase):
+    def test_slots_follow_hours_length_and_bookings(self):
+        set_hours(self.doctor, start=time(9, 0), end=time(11, 0), length=30)
+        self.book(appointment_time=time(9, 30))  # takes 09:30 to 10:00
+        slots = [slot.strftime('%H:%M') for slot in available_slots(self.doctor, TOMORROW)]
+        self.assertEqual(slots, ['09:00', '10:00', '10:15', '10:30'])
+
+    def test_canceled_booking_frees_its_slots(self):
+        set_hours(self.doctor, start=time(9, 0), end=time(10, 0), length=60)
+        self.book(status=STATUS_CANCELED)
+        self.assertEqual(available_slots(self.doctor, TOMORROW), [time(9, 0)])
+
+    def test_no_slots_on_day_off_or_in_past(self):
+        WorkingHours.objects.filter(doctor=self.doctor, weekday=TOMORROW.weekday()).delete()
+        self.assertEqual(available_slots(self.doctor, TOMORROW), [])
+        self.assertEqual(available_slots(self.doctor, timezone.localdate() - timedelta(days=1)), [])
+
+    def test_slots_api_with_browser_session(self):
+        set_hours(self.doctor, start=time(9, 0), end=time(10, 0), length=30)
+        self.client.force_login(self.patient)
+        url = reverse('doctor_slots', args=[self.doctor.pk])
+        response = self.client.get(url, {'date': TOMORROW.isoformat()})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'date': TOMORROW.isoformat(), 'duration_minutes': 30,
+                                           'slots': ['09:00', '09:15', '09:30']})
+        self.assertEqual(self.client.get(url, {'date': '2026-02-30'}).status_code, 400)
+        self.assertEqual(self.client.get(url).status_code, 400)
+
+    def test_slots_api_rejects_unverified_doctor_and_anonymous(self):
+        unverified = User.objects.create_user('nolicense', password='x', role=ROLE_DOCTOR)
+        self.client.force_login(self.patient)
+        self.assertEqual(self.client.get(reverse('doctor_slots', args=[unverified.pk]),
+                                         {'date': TOMORROW.isoformat()}).status_code, 404)
+        self.client.logout()
+        self.assertEqual(self.client.get(reverse('doctor_slots', args=[self.doctor.pk]),
+                                         {'date': TOMORROW.isoformat()}).status_code, 401)
+
+
+class AvailabilityPageTests(AppointmentTestCase):
+    url = reverse('availability')
+
+    def form_data(self, **overrides):
+        data = {'appointment_length': 45}
+        for day in range(7):
+            data.update({f'works_{day}': day < 5, f'start_{day}': '08:00', f'end_{day}': '16:00'})
+        data = {key: value for key, value in data.items() if value is not False}
+        data.update(overrides)
+        return data
+
+    def test_doctor_saves_hours_and_length(self):
+        self.client.force_login(self.doctor)
+        response = self.client.post(self.url, self.form_data())
+        self.assertRedirects(response, self.url)
+        self.assertEqual(list(self.doctor.working_hours.values_list('weekday', flat=True)), [0, 1, 2, 3, 4])
+        self.assertEqual(self.doctor.working_hours.first().end_time, time(16, 0))
+        self.doctor.doctorprofile.refresh_from_db()
+        self.assertEqual(self.doctor.doctorprofile.appointment_length, 45)
+
+    def test_end_before_start_rejected(self):
+        self.client.force_login(self.doctor)
+        response = self.client.post(self.url, self.form_data(end_0='07:00'))
+        self.assertContains(response, 'Monday must end after it starts')
+        self.assertEqual(self.doctor.working_hours.count(), 7)  # unchanged from setUp
+
+    def test_length_below_30_rejected(self):
+        self.client.force_login(self.doctor)
+        response = self.client.post(self.url, self.form_data(appointment_length=15))
+        self.assertEqual(response.status_code, 200)
+        self.doctor.doctorprofile.refresh_from_db()
+        self.assertEqual(self.doctor.doctorprofile.appointment_length, 30)
+
+    def test_patient_cannot_open(self):
+        self.client.force_login(self.patient)
+        self.assertEqual(self.client.get(self.url).status_code, 403)

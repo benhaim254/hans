@@ -25,7 +25,8 @@ Admins manage users, profiles, appointments and notifications in the Django admi
 
 - Roles live on a custom `User` model (`patient`, `doctor`, `admin`). Web views use a `role_required` decorator and API views use DRF permission classes (`IsPatient`, `IsDoctor`). Each user only ever sees their own appointments; asking for someone else's returns 404.
 - Self-registration can create patients and doctors, never admins. A doctor must give a KMPDC number that is on the register (a local `KmpdcRegister` table standing in for the real KMPDC register). Each number can belong to one account only: the doctor profile holds a one-to-one link to the register entry, so the database itself rejects a second claim. Only verified doctors can be booked.
-- A doctor cannot be double-booked. A partial unique constraint on `(doctor, date, time)` enforces it in the database and ignores canceled appointments, so canceling frees the slot. `Appointment.clean()` runs the same check first so the form and the API return a readable error.
+- Doctors set their own working hours (one range per weekday) and an appointment length of 30 minutes or more on a My availability page. Patients pick from a list of free start times on a 15-minute grid, which the booking page loads from `/api/doctors/<id>/slots/`. The length is copied onto each appointment when it is booked, so a later change doesn't move existing appointments.
+- A doctor cannot be double-booked. `Appointment.clean()`, used by both the form and the API, rejects a booking that overlaps another active appointment. Canceled appointments don't count, so canceling frees the time. In the database, a partial unique constraint on `(doctor, date, time)` stops two active bookings with the same start time. SQLite can't express a full overlap rule; Postgres could, with an exclusion constraint.
 - Status changes go through `Appointment.confirm()` and `Appointment.cancel()`, so the web views and the API share one set of transition rules.
 - The `notifications` app listens to appointment saves. It stores a `Notification` row and emails the user once the transaction commits. In development, emails print to the terminal.
 - Profiles (`PatientProfile`, `DoctorProfile`) are created automatically by a `post_save` signal when a user signs up.
@@ -75,6 +76,7 @@ uv run python -c "from django.core.management.utils import get_random_secret_key
 | POST | `/api/register/` | anyone | create a patient or doctor account (doctors send `kmpdc_number`) |
 | POST | `/api/token/` | anyone | get access and refresh tokens (the access token carries the user's role) |
 | POST | `/api/token/refresh/` | anyone | refresh an access token |
+| GET | `/api/doctors/<id>/slots/?date=YYYY-MM-DD` | logged in | free start times for a verified doctor |
 | GET | `/api/appointments/` | patient, doctor | list your own appointments |
 | POST | `/api/appointments/` | patient | book an appointment |
 | GET | `/api/appointments/<uuid>/` | patient, doctor | one of your appointments |
@@ -114,7 +116,6 @@ templates/       server-rendered pages
 
 ## What's next
 
-- Structured doctor availability, so patients can only pick open slots
 - Reminder notifications the day before an appointment, and SMS
 - Production settings: Postgres, static files with WhiteNoise, a Dockerfile
 

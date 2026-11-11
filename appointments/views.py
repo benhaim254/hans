@@ -6,7 +6,7 @@ from django.views.decorators.http import require_POST
 from users.decorators import role_required
 from users.models import ROLE_DOCTOR, ROLE_PATIENT
 
-from .forms import AppointmentForm, CancelAppointmentForm
+from .forms import AppointmentForm, AvailabilityForm, CancelAppointmentForm
 from .models import Appointment
 
 
@@ -38,7 +38,18 @@ def doctor_dashboard(request):
                     .select_related('patient'))
     return render(request, 'appointments/doctor_dashboard.html', {
         'appointments': appointments,
+        'has_working_hours': request.user.working_hours.exists(),
     })
+
+
+@role_required(ROLE_DOCTOR)
+def availability(request):
+    form = AvailabilityForm(request.POST or None, doctor=request.user)
+    if form.is_valid():
+        form.save()
+        messages.success(request, 'Availability saved.')
+        return redirect('availability')
+    return render(request, 'appointments/availability.html', {'form': form})
 
 
 @require_POST

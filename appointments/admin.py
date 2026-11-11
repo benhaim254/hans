@@ -1,6 +1,6 @@
 from django.contrib import admin
 from unfold.admin import ModelAdmin
-from .models import Appointment
+from .models import Appointment, WorkingHours
 
 
 @admin.register(Appointment)
@@ -9,7 +9,14 @@ class AppointmentAdmin(ModelAdmin):
         'patient', 
         'doctor', 
         'appointment_date', 
-        'appointment_time', 
+        'appointment_time',
+        'duration_minutes',
         'status')
     list_filter = ('status', 'appointment_date')
     search_fields = ('patient__username', 'doctor__username')
+
+@admin.register(WorkingHours)
+class WorkingHoursAdmin(ModelAdmin):
+    list_display = ('doctor', 'weekday', 'start_time', 'end_time')
+    list_filter = ('weekday',)
+    search_fields = ('doctor__username',)
