@@ -61,6 +61,9 @@
                                     </form>
                                     <a href="{% url 'respond_to_request' appointment.appointment_id %}" class="btn btn-sm btn-outline-secondary">Decline or propose</a>
                                 </div>
+                            {% elif appointment.status == 'completed' %}
+                                <a href="{% url 'visit_notes' appointment.appointment_id %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-journal-text me-1" aria-hidden="true"></i>{% if appointment.visit_notes %}Edit notes{% else %}Add notes{% endif %}</a>
                             {% elif appointment.status == 'scheduled' and appointment.has_started %}
                                 <div class="d-inline-flex gap-1">
                                     <form method="POST" action="{% url 'complete_appointment' appointment.appointment_id %}" class="m-0">

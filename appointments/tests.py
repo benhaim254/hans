@@ -610,3 +610,39 @@ class RescheduleTests(AppointmentTestCase):
         api.force_authenticate(self.doctor)
         self.assertEqual(api.post(reverse('appointment-reschedule', args=[self.appointment.appointment_id]),
                                   {'appointment_date': TOMORROW, 'appointment_time': '11:00'}).status_code, 403)
+
+
+class VisitNotesTests(AppointmentTestCase):
+    SECRET = 'Suspected hypertension, recheck in 2 weeks'
+
+    def setUp(self):
+        super().setUp()
+        self.visit = self.book(status=STATUS_COMPLETED, appointment_date=timezone.localdate() - timedelta(days=1))
+        self.url = reverse('visit_notes', args=[self.visit.appointment_id])
+
+    def test_doctor_writes_notes(self):
+        self.client.force_login(self.doctor)
+        self.assertContains(self.client.get(self.url), 'Only you can see these notes')
+        self.assertContains(self.client.get(reverse('doctor_dashboard')), 'Add notes')
+        response = self.client.post(self.url, {'visit_notes': self.SECRET})
+        self.assertRedirects(response, reverse('doctor_dashboard'))
+        self.visit.refresh_from_db()
+        self.assertEqual(self.visit.visit_notes, self.SECRET)
+
+    def test_notes_never_reach_patient_or_other_doctor(self):
+        self.visit.visit_notes = self.SECRET
+        self.visit.save()
+        self.client.force_login(self.patient)
+        self.assertEqual(self.client.get(self.url).status_code, 403)
+        self.assertNotContains(self.client.get(reverse('patient_dashboard')), self.SECRET)
+        api = APIClient()
+        api.force_authenticate(self.patient)
+        detail = api.get(reverse('appointment-detail', args=[self.visit.appointment_id])).data
+        self.assertNotIn('visit_notes', detail)
+        self.client.force_login(self.other_doctor)
+        self.assertEqual(self.client.get(self.url).status_code, 404)
+
+    def test_only_completed_appointments_take_notes(self):
+        upcoming = self.book(status=STATUS_SCHEDULED)
+        self.client.force_login(self.doctor)
+        self.assertEqual(self.client.get(reverse('visit_notes', args=[upcoming.appointment_id])).status_code, 404)
