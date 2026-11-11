@@ -54,6 +54,15 @@ class UserManager(DjangoUserManager):
         """Doctors whose KMPDC number has been checked; only these can be booked."""
         return self.filter(role=ROLE_DOCTOR, doctorprofile__kmpdc__isnull=False)
 
+# Every appointment is at least 30 minutes; doctors may choose longer.
+APPOINTMENT_LENGTH_CHOICES = [
+    (30, '30 minutes'),
+    (45, '45 minutes'),
+    (60, '1 hour'),
+    (90, '1 hour 30 minutes'),
+    (120, '2 hours'),
+]
+
 
 class User(AbstractUser):
     """
@@ -73,6 +82,14 @@ class User(AbstractUser):
                             default= ROLE_PATIENT)
 
     objects = UserManager()
+
+    def save(self, *args, **kwargs):
+        # The admin role means managing the system through the admin site, which needs staff access.
+        if self.role == ROLE_ADMIN and not self.is_staff:
+            self.is_staff = True
+            if kwargs.get('update_fields') is not None:
+                kwargs['update_fields'] = {*kwargs['update_fields'], 'is_staff'}
+        super().save(*args, **kwargs)
 
 #Return username and role for easy identification in admin and debugging.
     def __str__(self):
@@ -131,7 +148,9 @@ class DoctorProfile(CommonProfile):
     # One register entry per doctor: the OneToOne makes reusing a number impossible at the database level.
     kmpdc = models.OneToOneField('KmpdcRegister', on_delete=models.PROTECT, null=True, blank=True,
                                  related_name='doctor', verbose_name='KMPDC number')
-    available_days= models.CharField(max_length=100, blank=True, help_text="e.g Mon, Wed, Fri")
+    appointment_length = models.PositiveSmallIntegerField(
+        choices=APPOINTMENT_LENGTH_CHOICES, default=30,
+        help_text='How long each appointment with this doctor lasts.')
     
     class Meta:
         verbose_name = 'Doctor Profile'
@@ -155,6 +174,10 @@ class KmpdcRegister(models.Model):
 
     def __str__(self):
         return f"{self.license_number} ({self.full_name})"
+
+    def clean(self):
+        # Normalise before unique validation, so ' a1 ' is caught as a duplicate of 'A1' in the admin form.
+        self.license_number = normalize_kmpdc(self.license_number)
 
     def save(self, *args, **kwargs):
         self.license_number = normalize_kmpdc(self.license_number)

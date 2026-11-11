@@ -7,9 +7,10 @@
         <div class="card">
             <div class="card-body">
                 <h2 class="h5 mb-3"><i class="bi bi-calendar-plus me-1" aria-hidden="true"></i>Book an appointment</h2>
-                <form method="POST">
+                <form method="POST" id="booking-form" data-slot-picker data-selected-time="{{ form.appointment_time.value|default_if_none:''|slice:':5' }}">
                     {% csrf_token %}
                     {{ form.as_div }}
+                    <p class="small text-secondary" data-slot-note aria-live="polite"></p>
                     <button type="submit" class="btn btn-primary w-100">Book appointment</button>
                 </form>
             </div>
@@ -25,16 +26,34 @@
                             <h2 class="h6 mb-1">Dr. {{ appointment.doctor.get_full_name|default:appointment.doctor.username }}</h2>
                             <div class="text-secondary small">
                                 <i class="bi bi-calendar3 me-1" aria-hidden="true"></i>{{ appointment.appointment_date|date:"D j M Y" }}
-                                <i class="bi bi-clock ms-2 me-1" aria-hidden="true"></i>{{ appointment.appointment_time|time:"H:i" }}
+                                <i class="bi bi-clock ms-2 me-1" aria-hidden="true"></i>{{ appointment.appointment_time|time:"H:i" }} to {{ appointment.end_time|time:"H:i" }}
                             </div>
                         </div>
                         <span class="badge rounded-pill status-{{ appointment.status }}">{{ appointment.get_status_display }}</span>
                     </div>
                     {% if appointment.reason %}<p class="mb-0 mt-2">{{ appointment.reason }}</p>{% endif %}
                     {% if appointment.cancellation_reason %}
-                        <p class="mb-0 mt-2 small text-danger">Canceled: {{ appointment.cancellation_reason }}</p>
+                        <p class="mb-0 mt-2 small text-danger">{{ appointment.get_status_display }}: {{ appointment.cancellation_reason }}</p>
+                    {% endif %}
+                    {% if appointment.status == 'proposed' %}
+                        <div class="alert alert-info small mt-3 mb-0 py-2">
+                            Dr. {{ appointment.doctor.get_full_name|default:appointment.doctor.username }} proposed this new time.
+                            <div class="d-flex gap-2 mt-2">
+                                <form method="POST" action="{% url 'accept_proposal' appointment.appointment_id %}" class="m-0">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-primary">Accept new time</button>
+                                </form>
+                                <form method="POST" action="{% url 'cancel_appointment' appointment.appointment_id %}" class="m-0">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="cancellation_reason" value="The proposed time doesn't work for me.">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Decline</button>
+                                </form>
+                            </div>
+                        </div>
                     {% endif %}
                     {% if appointment.status == 'pending' or appointment.status == 'scheduled' %}
+                        <a href="{% url 'reschedule_appointment' appointment.appointment_id %}" class="btn btn-sm btn-outline-primary mt-3">
+                            <i class="bi bi-arrow-repeat me-1" aria-hidden="true"></i>Reschedule</a>
                         <form method="POST" action="{% url 'cancel_appointment' appointment.appointment_id %}" class="mt-3">
                             {% csrf_token %}
                             <div class="input-group input-group-sm m-0">
@@ -56,4 +75,5 @@
         {% endfor %}
     </div>
 </div>
+{% include "appointments/_slot_picker.html" %}
 {% endblock %}

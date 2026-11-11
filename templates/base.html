@@ -22,6 +22,9 @@
         .status-scheduled { background: var(--bs-success-bg-subtle); color: var(--bs-success-text-emphasis); }
         .status-completed { background: var(--bs-secondary-bg-subtle); color: var(--bs-secondary-text-emphasis); }
         .status-canceled { background: var(--bs-danger-bg-subtle); color: var(--bs-danger-text-emphasis); }
+        .status-declined { background: var(--bs-danger-bg-subtle); color: var(--bs-danger-text-emphasis); }
+        .status-proposed { background: var(--bs-info-bg-subtle); color: var(--bs-info-text-emphasis); }
+        .status-no_show { background: var(--bs-dark-bg-subtle); color: var(--bs-dark-text-emphasis); }
     </style>
 </head>
 <body>
@@ -37,7 +40,10 @@
                 {% if request.user.is_authenticated %}
                     {% if request.user.role != 'admin' %}
                         <li class="nav-item"><a class="nav-link" href="/"><i class="bi bi-calendar-check me-1" aria-hidden="true"></i>Appointments</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{% url 'notifications:list' %}"><i class="bi bi-bell me-1" aria-hidden="true"></i>Notifications</a></li>
+                        {% if request.user.role == 'doctor' %}
+                            <li class="nav-item"><a class="nav-link" href="{% url 'availability' %}"><i class="bi bi-clock-history me-1" aria-hidden="true"></i>Availability</a></li>
+                        {% endif %}
+                        <li class="nav-item"><a class="nav-link" href="{% url 'notifications:list' %}"><i class="bi bi-bell me-1" aria-hidden="true"></i>Notifications{% if unread_notifications %} <span class="badge rounded-pill bg-danger">{{ unread_notifications }}<span class="visually-hidden"> unread</span></span>{% endif %}</a></li>
                         <li class="nav-item"><a class="nav-link" href="{% url 'users:profile_edit' %}"><i class="bi bi-person me-1" aria-hidden="true"></i>Profile</a></li>
                     {% endif %}
                     <li class="nav-item ms-md-3">
@@ -61,7 +67,7 @@
 
 <main class="container pb-5">
     {% for message in messages %}
-        <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}success{% endif %} alert-dismissible fade show" role="alert">
+        <div class="alert alert-{% if message.tags == 'error' %}danger{% elif message.tags == 'warning' %}warning{% else %}success{% endif %} alert-dismissible fade show" role="alert">
             {{ message }}
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>

@@ -5,7 +5,7 @@ description = "Health Appointment & Notification System: patient booking, doctor
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "django~=6.0.3",
+    "django>=6.0.9,<6.1",
     "djangorestframework==3.17.1",
     "djangorestframework-simplejwt==5.5.1",
     "django-phonenumber-field[phonenumbers]>=8.0,<9",

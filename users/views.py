@@ -2,7 +2,9 @@ from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.http import Http404
+from django.db import IntegrityError
 from django.shortcuts import redirect, render
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 from rest_framework.generics import CreateAPIView
 from rest_framework.permissions import AllowAny
@@ -54,9 +56,15 @@ def login_view(request):
                             password=request.POST.get('password'))
         if user:
             login(request, user)
+            next_url = request.POST.get('next', '')
+            # Only follow ?next= to this site, never to an outside address.
+            if url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()},
+                                               require_https=request.is_secure()):
+                return redirect(next_url)
             return redirect_by_role(user)
-        return render(request, 'users/login.html', {'error': 'Invalid username or password'})
-    return render(request, 'users/login.html')
+        return render(request, 'users/login.html', {'error': 'Invalid username or password',
+                                                    'next': request.POST.get('next', '')})
+    return render(request, 'users/login.html', {'next': request.GET.get('next', '')})
 
 
 @require_POST
@@ -70,7 +78,11 @@ def register_view(request):
         return redirect_by_role(request.user)
     form = SignUpForm(request.POST or None)
     if form.is_valid():
-        user = form.save()
+        try:
+            user = form.save()
+        except IntegrityError:  # same username or KMPDC number claimed by a simultaneous sign-up
+            form.add_error(None, 'Someone registered with these details at the same moment. Please try again.')
+            return render(request, 'users/register.html', {'form': form})
         login(request, user)
         messages.success(request, 'Welcome to HANS. Complete your profile below.')
         return redirect('users:profile_edit')
